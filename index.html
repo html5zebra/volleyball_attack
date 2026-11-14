@@ -79,7 +79,7 @@ ol,ul{padding-left:20px;margin:6px 0}
 
   <div class="card">
     <h2>1. Видео</h2>
-    <div class="sub">Сбоку, со штатива, 1080p / 60 fps, обычный режим (не Slo‑mo). Ролик любой длины до 40 с — удар найдётся сам.</div>
+    <div class="sub">Сбоку, со штатива, 1080p / 60 fps, обычный режим (не Slo‑mo). Ролик до 6 с разбирается целиком; в более длинном (до 40 с) удар находится сам, берётся 2.5 с до пика прыжка и 1.5 с после.</div>
     <div class="row" style="margin-top:10px">
       <label class="btn pri" for="file" style="color:#1a1300;font-size:14px">Выбрать / снять видео</label>
       <input id="file" type="file" accept="video/*" class="hide">
@@ -226,14 +226,16 @@ ol,ul{padding-left:20px;margin:6px 0}
 // Все настраиваемые пороги. src: 'coach' — распространённый тренерский ориентир,
 // 'heur' — эвристика автора, подбирается под себя. ok — зелёная зона [min,max],
 // bad — за этими границами красная зона; между ними жёлтая. null = без границы.
-const APP_VERSION='1.6.0 · 14.11.2026';
+const APP_VERSION='1.7.0 · 14.11.2026';
 const CONFIG = {
   hiSide: 1280,          // размер сохраняемых кадров (для показа и уточнения точек)
   cropPx: 512,           // размер увеличенного фрагмента вокруг игрока для второго прохода
   maxSide: 640,          // до этого размера уменьшается кадр перед распознаванием
   maxRealFps: 60,        // больше 60 замеров в секунду не берём
-  windowBefore: 2.0,     // сек до пика прыжка, которые разбираем
-  windowAfter: 1.0,      // сек после пика
+  wholeSec: 6,           // ролик не длиннее этого разбирается целиком
+  maxFrames: 360,        // больше кадров не берём — прореживаем
+  windowBefore: 2.5,     // сек до пика прыжка, которые разбираем
+  windowAfter: 1.5,      // сек после пика
   coarseStep: 0.125,     // шаг грубого поиска прыжка, сек
   maxAutoSec: 40,        // максимум длины ролика для автопоиска
   smoothSec: 0.05,       // окно сглаживания точек
@@ -736,7 +738,9 @@ for(const k of SET_KEYS)$(k).addEventListener('change',()=>{
   const o={};for(const q of SET_KEYS)o[q]=$(q).value;
   try{localStorage.setItem('spikelab.set',JSON.stringify(o))}catch(e){}
   if((k==='sHeight'||k==='sHand'||k==='sNet')&&S.frames)compute();
+  if(k==='sSlow')retime();
 });
+function retime(){if(!S.frames)return;const sl=+$('sSlow').value||1;for(const f of S.frames)f.t=f.tv/sl;compute()}
 const opt=()=>({netCm:+$('sNet').value||0,heightCm:+$('sHeight').value||180,hand:$('sHand').value,slow:+$('sSlow').value||1});
 
 // ---------- вкладки
@@ -753,6 +757,7 @@ $('file').onchange=async e=>{
   if(video.src)URL.revokeObjectURL(video.src);
   video.src=URL.createObjectURL(f);
   $('videoBox').classList.remove('hide');$('results').classList.add('hide');
+  try{$('sSlow').value=JSON.parse(localStorage.getItem('spikelab.set')||'{}').sSlow||'1'}catch(e){$('sSlow').value='1'}
   S.pick=null;S.cands=null;$('pick').classList.add('hide');$('pickMsg').textContent='Если в кадре несколько человек: останови видео там, где тебя хорошо видно, и нажми.';
   setStatus('Загружаю видео…');
   await new Promise(r=>{video.onloadedmetadata=r;video.onerror=r});
@@ -932,7 +937,7 @@ async function run(center){
     const seedAt=(co,tv)=>{let b=null;for(const f of co)if(f.lm&&(!b||Math.abs(f.tv-tv)<Math.abs(b.tv-tv)))b=f;return b?{tv:b.tv,...cen(b.lm)}:null};
     if(cv==null){
       if(dur/slow>CONFIG.maxAutoSec){setStatus('Ролик длиннее '+CONFIG.maxAutoSec+' с. Перемотай видео на нужный удар и нажми «Разобрать с текущего момента видео».');busy(false);return}
-      if(dur/slow>CONFIG.windowBefore+CONFIG.windowAfter+0.5){
+      if(dur/slow>CONFIG.wholeSec){
         const co=await grab(0,dur,CONFIG.coarseStep*slow,false,'Ищу прыжок…');
         associate(co,seed);
         let best=null;
@@ -943,8 +948,10 @@ async function run(center){
       }
     }
     const fps=await estimateFps();
-    const rate=Math.min(fps*slow,CONFIG.maxRealFps),stepV=slow/rate;
+    if(dur/slow<=CONFIG.wholeSec)cv=null;   // короткий ролик берём целиком, чтобы точно попали и разбег, и приземление
+    let rate=Math.min(fps*slow,CONFIG.maxRealFps),stepV=slow/rate;
     const tv0=cv==null?0:Math.max(0,cv-CONFIG.windowBefore*slow),tv1=cv==null?dur:Math.min(dur,cv+CONFIG.windowAfter*slow);
+    if((tv1-tv0)/stepV>CONFIG.maxFrames){stepV=(tv1-tv0)/CONFIG.maxFrames;rate=slow/stepV}
     if(center!=null&&seed&&(seed.tv<tv0||seed.tv>tv1)){
       // игрок выбран на кадре вне окна разбора — доводим привязку до момента удара
       const co=await grab(Math.min(seed.tv,cv),Math.max(seed.tv,cv),CONFIG.coarseStep*slow,false,'Веду игрока к моменту удара…');
@@ -964,6 +971,11 @@ async function run(center){
       if(!S.res.ok||S.res.ignored.length){S.marks.contact=null;compute(true);msg+=' Этот кадр не попал в прыжок — контакт определён автоматически, проверь его ниже.'}
       else msg+=' Контакт поставлен на выбранный кадр.';
     }else compute(true);
+    if(S.res.ok&&S.res.phys.good&&S.res.phys.ratio<0.45&&opt().slow===1){
+      const k=1/Math.sqrt(S.res.phys.ratio),kk=[2,4,8].reduce((a,b)=>Math.abs(b-k)<Math.abs(a-k)?b:a);
+      $('sSlow').value=String(kk);retime();
+      msg+=' Похоже, видео замедлено примерно ×'+kk+' (тело падает медленнее, чем положено по g) — учёл это автоматически. Если это не так, поменяй «Видео замедлено» в настройках.';
+    }
     if(S.res.ok)setStatus(msg);
   }catch(e){
     if(e.message==='cancel')setStatus('Остановлено.');
