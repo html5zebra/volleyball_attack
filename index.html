@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1420">
+<title>SpikeLab — разбор атакующего удара</title>
+<style>
+:root{--bg:#0f1420;--card:#182033;--card2:#1f2940;--line:#2c3854;--tx:#e9eefb;--mut:#93a0bd;--acc:#ffb020;--ok:#3ecf8e;--warn:#f5b942;--bad:#ff5d5d;--info:#6aa9ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) 0 80px}
+header{padding:14px 16px 6px}
+h1{font-size:20px;margin:0}
+h1 span{color:var(--acc)}
+h2{font-size:16px;margin:0 0 8px}
+h3{font-size:14px;margin:14px 0 6px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.sub{color:var(--mut);font-size:13px}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:#0b0f19;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav button{flex:1;background:none;border:0;color:var(--mut);padding:12px 4px;font-size:13px}
+nav button.on{color:var(--acc);font-weight:600}
+main{padding:0 12px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+label{font-size:12px;color:var(--mut);display:block}
+select,input[type=number],input[type=text]{width:100%;background:var(--card2);color:var(--tx);border:1px solid var(--line);border-radius:9px;padding:9px;font-size:15px}
+button,.btn{background:var(--card2);color:var(--tx);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;cursor:pointer}
+.btn.pri,button.pri{background:var(--acc);color:#1a1300;border-color:var(--acc);font-weight:700}
+button.sm{padding:6px 9px;font-size:13px}
+button:disabled{opacity:.45}
+.hide{display:none!important}
+video{width:100%;border-radius:10px;background:#000;max-height:46vh}
+canvas#view{width:100%;border-radius:10px;background:#000;display:block;touch-action:pan-y}
+input[type=range]{width:100%}
+.bar{height:8px;background:var(--card2);border-radius:5px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--acc)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:6px 0}
+.chips button{white-space:nowrap}
+.verdict{border-left:5px solid var(--info)}
+.verdict.ok{border-left-color:var(--ok)}.verdict.early,.verdict.late{border-left-color:var(--bad)}
+.verdict b.big{font-size:18px}
+.rec{border-left:5px solid var(--warn)}
+.rec.s2{border-left-color:var(--bad)}
+.rec .hack{background:var(--card2);border-radius:9px;padding:8px 10px;margin:8px 0}
+.rec ul{margin:6px 0 0;padding-left:18px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+td,th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:500}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--mut)}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}.dot.info{background:var(--info)}
+.conf{font-size:11px;color:var(--mut)}
+.conf.low{color:var(--bad)}
+details summary{cursor:pointer;color:var(--mut)}
+.thumbs{display:flex;gap:6px;overflow-x:auto}
+.thumbs figure{margin:0;flex:0 0 46%}
+.thumbs img{width:100%;border-radius:8px;display:block}
+.thumbs figcaption{font-size:11px;color:var(--mut);text-align:center}
+.sess{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.sess img{width:84px;border-radius:8px}
+.good{color:var(--ok)}.worse{color:var(--bad)}
+ol,ul{padding-left:20px;margin:6px 0}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 5px;color:var(--mut)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Spike<span>Lab</span></h1>
+  <div class="sub">Разбор атакующего удара по видео. Всё считается на телефоне, видео никуда не отправляется.</div>
+</header>
+<main>
+
+<!-- ============ АНАЛИЗ ============ -->
+<section id="tabA">
+  <div class="card" id="focusCard" style="display:none"></div>
+
+  <div class="card">
+    <h2>1. Видео</h2>
+    <div class="sub">Сбоку, со штатива, 1080p / 60 fps, обычный режим (не Slo‑mo). Ролик любой длины до 40 с — удар найдётся сам.</div>
+    <div class="row" style="margin-top:10px">
+      <label class="btn pri" for="file" style="color:#1a1300;font-size:14px">Выбрать / снять видео</label>
+      <input id="file" type="file" accept="video/*" class="hide">
+      <span id="fileName" class="sub"></span>
+    </div>
+    <div id="videoBox" class="hide" style="margin-top:10px">
+      <video id="video" playsinline muted controls preload="auto"></video>
+      <div class="row" style="margin-top:8px">
+        <button class="pri" id="btnAuto">Найти удар и разобрать</button>
+        <button id="btnHere">Удар на этом кадре</button>
+        <button id="btnCancel" class="hide">Стоп</button>
+      </div>
+      <div class="sub" style="margin-top:6px">Если автопоиск ошибся — поставь ползунок видео на момент удара и нажми «Удар на этом кадре».</div>
+      <div class="bar hide" id="bar"><i></i></div>
+      <div id="status" class="sub" style="margin-top:6px"></div>
+    </div>
+  </div>
+
+  <details class="card">
+    <summary>Настройки (рост, рука, замедление)</summary>
+    <div class="grid2" style="margin-top:10px">
+      <div><label>Рост, см</label><input id="sHeight" type="number" min="140" max="220" value="180"></div>
+      <div><label>Бьющая рука</label><select id="sHand"><option value="auto">Авто</option><option value="R">Правая</option><option value="L">Левая</option></select></div>
+      <div><label>Видео замедлено</label><select id="sSlow"><option value="1">Нет</option><option value="2">×2</option><option value="4">×4</option><option value="8">×8</option></select></div>
+      <div><label>Частота кадров</label><select id="sFps"><option value="auto">Авто</option><option value="30">30</option><option value="60">60</option></select></div>
+      <div><label>Модель позы</label><select id="sModel"><option value="full">Точная</option><option value="lite">Быстрая</option></select></div>
+      <div><label>Людей в кадре</label><select id="sMulti"><option value="1">Только я</option><option value="3">Несколько</option></select></div>
+    </div>
+  </details>
+
+  <div id="results" class="hide">
+    <div class="card">
+      <canvas id="view" width="640" height="360"></canvas>
+      <input id="scrub" type="range" min="0" max="1" value="0" step="1">
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <button class="sm" id="bPrev">◀</button>
+          <button class="sm" id="bPlay">▶ 0.25×</button>
+          <button class="sm" id="bNext">▶</button>
+        </div>
+        <span class="sub" id="frameInfo"></span>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="row">
+        <button class="sm" id="bContact">Контакт здесь</button>
+        <button class="sm" id="bSet">Пас здесь</button>
+        <button class="sm" id="bReset">Сброс меток</button>
+      </div>
+      <div class="sub" style="margin-top:6px">Контакт ставится автоматически (жёлтая метка). Проверь его: перемотай на кадр касания мяча и нажми «Контакт здесь» — от этого зависит тайминг. «Пас» — кадр, где мяч уходит от рук связующего (необязательно).</div>
+    </div>
+
+    <div class="card verdict" id="timing"></div>
+    <h3>Главные правки</h3>
+    <div id="recs"></div>
+    <div class="card" id="goodCard"></div>
+    <details class="card" open>
+      <summary>Все метрики</summary>
+      <div id="metrics"></div>
+    </details>
+    <div class="card">
+      <h2>Сохранить попытку</h2>
+      <input id="note" type="text" placeholder="Заметка: зона 4, высокий пас…">
+      <div class="row" style="margin-top:8px">
+        <button class="pri" id="bSave">Сохранить в историю</button>
+        <button id="bCopy">Скопировать разбор текстом</button>
+      </div>
+      <div class="sub" id="saveMsg" style="margin-top:6px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ИСТОРИЯ ============ -->
+<section id="tabH" class="hide">
+  <div class="card">
+    <h2>Прогресс</h2>
+    <select id="trendSel"></select>
+    <canvas id="trend" width="640" height="240" style="width:100%;margin-top:8px"></canvas>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Попытки</h2>
+      <div class="row"><button class="sm" id="bCompare">Сравнить 2</button><button class="sm" id="bExport">Экспорт</button></div>
+    </div>
+    <div id="sessList"></div>
+  </div>
+  <div class="card hide" id="detail"></div>
+</section>
+
+<!-- ============ КАК СНИМАТЬ ============ -->
+<section id="tabG" class="hide">
+  <div class="card">
+    <h2>Как снять, чтобы разбор был точным</h2>
+    <svg viewBox="0 0 320 150" style="width:100%;max-width:420px">
+      <line x1="10" y1="40" x2="310" y2="40" stroke="#93a0bd" stroke-width="3"/><text x="250" y="32" fill="#93a0bd" font-size="11">сетка</text>
+      <line x1="60" y1="105" x2="200" y2="55" stroke="#ffb020" stroke-width="2" stroke-dasharray="5 4"/><circle cx="60" cy="105" r="6" fill="#ffb020"/>
+      <text x="16" y="125" fill="#ffb020" font-size="11">разбег</text>
+      <rect x="250" y="88" width="16" height="26" rx="3" fill="#6aa9ff"/><line x1="250" y1="100" x2="150" y2="80" stroke="#6aa9ff" stroke-dasharray="3 3"/>
+      <text x="228" y="130" fill="#6aa9ff" font-size="11">телефон, 6–8 м</text>
+    </svg>
+    <ol>
+      <li><b>Сбоку</b>, перпендикулярно линии разбега, со стороны бьющей руки (правша — камера справа).</li>
+      <li><b>Неподвижно</b>: штатив, сумка, скамейка. Высота — пояс/грудь. Горизонтальная ориентация.</li>
+      <li><b>6–8 метров</b>, чтобы в кадре были последние 2–3 шага, прыжок с вытянутой рукой и приземление.</li>
+      <li><b>1080p, 60 fps</b>, обычное видео. 4K не нужен — приложение всё равно уменьшает кадр до 640 px. Slo‑mo не используй: он ломает расчёт времени (если уж снял — укажи замедление в настройках).</li>
+      <li>В кадре желательно только ты. Если есть другие — включи «Людей в кадре: несколько» и стой ближе всех к камере.</li>
+      <li>Контрастная одежда, свет не в объектив.</li>
+    </ol>
+    <div class="sub">Обрезать ролик заранее не обязательно, но 5–10 секунд обрабатываются быстрее всего (10–20 с на телефоне). Файл не загружается в интернет и не сжимается — читается прямо из галереи.</div>
+  </div>
+  <div class="card">
+    <h2>Сценарии</h2>
+    <ul>
+      <li><b>На тренировке, между подходами.</b> Снял удар → через 20 секунд видишь тайминг и одну главную правку → следующий подход делаешь с этим фокусом.</li>
+      <li><b>Работа над таймингом.</b> Отмечай «Пас» и «Контакт». Смотри «контакт относительно пика прыжка»: минус — опаздываешь, плюс — прыгаешь рано.</li>
+      <li><b>Без мяча / с набрасывания.</b> Техника разбега, замаха и приземления считается так же; тайминг относительно паса просто пропусти.</li>
+      <li><b>До / после.</b> Сохраняй лучшую попытку каждой тренировки — во вкладке «История» график и сравнение двух попыток.</li>
+      <li><b>Разбор с тренером или ИИ.</b> «Скопировать разбор текстом» — готовый текст с цифрами, вставляется в любой чат.</li>
+    </ul>
+  </div>
+  <div class="card sub">
+    Оценки — эвристики по 2D‑позе с одного ракурса; все пороги лежат в объекте <code>CONFIG</code> в начале файла и подписаны. Разворот плеч относительно таза сбоку не измеряется — для него нужен ракурс сзади.
+  </div>
+</section>
+</main>
+
+<nav>
+  <button data-tab="A" class="on">Анализ</button>
+  <button data-tab="H">История</button>
+  <button data-tab="G">Как снимать</button>
+</nav>
+
+<script>
+// CORE-BEGIN ================================================================
+// Все настраиваемые пороги. src: 'coach' — распространённый тренерский ориентир,
+// 'heur' — эвристика автора, подбирается под себя. ok — зелёная зона [min,max],
+// bad — за этими границами красная зона; между ними жёлтая. null = без границы.
+const CONFIG = {
+  maxSide: 640,          // до этого размера уменьшается кадр перед распознаванием
+  maxRealFps: 60,        // больше 60 замеров в секунду не берём
+  windowBefore: 2.0,     // сек до пика прыжка, которые разбираем
+  windowAfter: 1.0,      // сек после пика
+  coarseStep: 0.125,     // шаг грубого поиска прыжка, сек
+  maxAutoSec: 40,        // максимум длины ролика для автопоиска
+  smoothSec: 0.05,       // окно сглаживания точек
+  groundTol: 0.03,       // стопа «в воздухе», если выше земли на эту долю роста
+  T: {
+    approachSpeed:{ok:[2.6,null],bad:[1.8,null],src:'heur',target:'от 2.6 м/с'},
+    accel:        {ok:[1.1,null],bad:[0.9,null],src:'coach',target:'последние шаги быстрее (×1.1+)'},
+    stepClose:    {ok:[0.06,0.22],bad:[0.02,0.32],src:'heur',target:'0.06–0.22 с'},
+    kneeTakeoff:  {ok:[95,125],bad:[80,145],src:'heur',target:'95–125°'},
+    backswing:    {ok:[45,null],bad:[25,null],src:'heur',target:'от 45° назад'},
+    armLift:      {ok:[null,0.08],bad:[null,0.16],src:'heur',target:'до отрыва или сразу после'},
+    drift:        {ok:[null,90],bad:[null,130],src:'heur',target:'до 90 см'},
+    elbowHeightBow:{ok:[0,null],bad:[-6,null],src:'coach',target:'локоть не ниже плеча'},
+    elbowAngleBow:{ok:[50,115],bad:[null,140],src:'heur',target:'50–115° (рука согнута)'},
+    guideArm:     {ok:[5,null],bad:[-10,null],src:'coach',target:'кисть выше плеча'},
+    elbowContact: {ok:[155,null],bad:[135,null],src:'coach',target:'от 155° (почти прямая)'},
+    reach:        {ok:[85,null],bad:[70,null],src:'heur',target:'от 85% длины руки'},
+    front:        {ok:[3,30],bad:[-3,40],src:'heur',target:'на 3–30% роста впереди плеча'},
+    contactVsApex:{ok:[-60,60],bad:[-120,120],src:'heur',target:'±60 мс от пика'},
+    heightLost:   {ok:[null,12],bad:[null,25],src:'heur',target:'до 12% высоты прыжка'},
+    landAsym:     {ok:[null,60],bad:[null,120],src:'heur',target:'до 60 мс между стопами'},
+    kneeLanding:  {ok:[null,135],bad:[null,155],src:'coach',target:'сгиб до 135° и глубже'}
+  }
+};
+const L={nose:0,earL:7,earR:8,shL:11,shR:12,elL:13,elR:14,wrL:15,wrR:16,hipL:23,hipR:24,knL:25,knR:26,anL:27,anR:28,heL:29,heR:30,toL:31,toR:32};
+
+function statusOf(v,th){
+  if(v==null||!isFinite(v))return 'na';
+  if(!th)return 'info';
+  const [a,b]=th.ok,[c,d]=th.bad;
+  if((a==null||v>=a)&&(b==null||v<=b))return 'ok';
+  if((c!=null&&v<c)||(d!=null&&v>d))return 'bad';
+  return 'warn';
+}
+function median(a){if(!a.length)return NaN;const s=[...a].sort((x,y)=>x-y);const m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2}
+function pct(a,p){if(!a.length)return NaN;const s=[...a].sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.max(0,Math.round(p*(s.length-1))))]}
+function fillGaps(a){
+  const n=a.length;let last=-1;
+  for(let i=0;i<n;i++){
+    if(a[i]!=null){
+      if(last<0){for(let k=0;k<i;k++)a[k]=a[i]}
+      else if(i-last>1){for(let k=last+1;k<i;k++)a[k]=a[last]+(a[i]-a[last])*(k-last)/(i-last)}
+      last=i;
+    }
+  }
+  if(last<0){a.fill(0)}else for(let k=last+1;k<n;k++)a[k]=a[last];
+  return a;
+}
+function smooth(a,w){
+  if(w<=1)return a.slice();
+  const n=a.length,h=w>>1,o=new Array(n);
+  for(let i=0;i<n;i++){let s=0,c=0;for(let k=Math.max(0,i-h);k<=Math.min(n-1,i+h);k++){s+=a[k];c++}o[i]=s/c}
+  return o;
+}
+function deriv(a,t){
+  const n=a.length,o=new Array(n).fill(0);
+  for(let i=0;i<n;i++){const i0=Math.max(0,i-1),i1=Math.min(n-1,i+1);const dt=t[i1]-t[i0];o[i]=dt>0?(a[i1]-a[i0])/dt:0}
+  return o;
+}
+
+function analyze(frames,opts){
+  opts=opts||{};
+  const cfg=CONFIG,T=cfg.T,n=frames.length;
+  const fail=e=>({ok:false,error:e});
+  if(n<12)return fail('Слишком мало кадров. Нужен ролик, где виден разбег, прыжок и приземление.');
+  const t=frames.map(f=>f.t);
+  const det=frames.filter(f=>f.lm).length/n;
+  if(det<0.7)return fail('Поза распознана только в '+Math.round(det*100)+'% кадров. Пересними: всё тело в кадре, камера сбоку, контрастная одежда.');
+  const dts=[];for(let i=1;i<n;i++)dts.push(t[i]-t[i-1]);
+  const dtm=median(dts);
+  const w=Math.max(3,Math.round(cfg.smoothSec/dtm)|1);
+  const X=[],Y=[],V=[];
+  for(let j=0;j<33;j++){
+    const x=new Array(n).fill(null),y=new Array(n).fill(null),v=new Array(n).fill(0);
+    for(let i=0;i<n;i++){const lm=frames[i].lm;if(lm&&lm[j]){x[i]=lm[j].x;y[i]=lm[j].y;v[i]=lm[j].v==null?1:lm[j].v}}
+    X[j]=smooth(fillGaps(x),w);Y[j]=smooth(fillGaps(y),w);V[j]=v;
+  }
+  const dist=(a,b,i)=>Math.hypot(X[a][i]-X[b][i],Y[a][i]-Y[b][i]);
+  const ang=(a,b,c,i)=>{
+    const ux=X[a][i]-X[b][i],uy=Y[a][i]-Y[b][i],vx=X[c][i]-X[b][i],vy=Y[c][i]-Y[b][i];
+    const d=Math.hypot(ux,uy)*Math.hypot(vx,vy);if(!d)return 180;
+    return Math.acos(Math.max(-1,Math.min(1,(ux*vx+uy*vy)/d)))*180/Math.PI;
+  };
+  const idxAt=tt=>{let b=0,bd=1e9;for(let i=0;i<n;i++){const d=Math.abs(t[i]-tt);if(d<bd){bd=d;b=i}}return b};
+  const rng=(ta,tb)=>{const o=[];for(let i=0;i<n;i++)if(t[i]>=ta-1e-9&&t[i]<=tb+1e-9)o.push(i);return o};
+  const confOf=(js,ii)=>{
+    if(!ii.length)return 'low';let s=0,c=0;
+    for(const i of ii)for(const j of js){s+=V[j][i];c++}
+    const m=s/c;return m>=0.75?'high':m>=0.5?'mid':'low';
+  };
+  // рост в пикселях: голень + бедро + корпус ≈ 78% роста
+  const hs=[];
+  for(let i=0;i<n;i++)if(frames[i].lm){
+    const l=dist(L.anL,L.knL,i)+dist(L.knL,L.hipL,i)+dist(L.hipL,L.shL,i);
+    const r=dist(L.anR,L.knR,i)+dist(L.knR,L.hipR,i)+dist(L.hipR,L.shR,i);
+    hs.push((l+r)/2/0.78);
+  }
+  const H=median(hs);
+  if(!(H>20))return fail('Фигура слишком мелкая в кадре. Подойди ближе к камере (6–8 м).');
+  const hCm=opts.heightCm||180,hM=hCm/100;
+  const hipX=X[L.hipL].map((v,i)=>(v+X[L.hipR][i])/2),hipY=Y[L.hipL].map((v,i)=>(v+Y[L.hipR][i])/2);
+  const shX=X[L.shL].map((v,i)=>(v+X[L.shR][i])/2),shY=Y[L.shL].map((v,i)=>(v+Y[L.shR][i])/2);
+  let apex=0;for(let i=1;i<n;i++)if(hipY[i]<hipY[apex])apex=i;
+  const footL=Y[L.anL].map((v,i)=>Math.max(v,Y[L.heL][i],Y[L.toL][i]));
+  const footR=Y[L.anR].map((v,i)=>Math.max(v,Y[L.heR][i],Y[L.toR][i]));
+  const footLow=footL.map((v,i)=>Math.max(v,footR[i]));
+  let gi=rng(t[apex]-1.2,t[apex]-0.3);
+  if(gi.length<3)gi=rng(t[0],t[apex]-0.15);
+  if(gi.length<2)return fail('Перед прыжком нет кадров с отталкиванием. Начни запись раньше или сдвинь момент удара.');
+  const G=pct(gi.map(i=>footLow[i]),0.8);
+  const air=i=>footLow[i]<G-cfg.groundTol*H;
+  let to=apex;while(to>0&&air(to))to--;
+  if(air(to))return fail('Ролик начинается уже в прыжке — нужен хотя бы последний шаг разбега.');
+  const airL=i=>footLow[i]<G-(cfg.groundTol+0.01)*H;
+  let ld=apex;while(ld<n-1&&airL(ld))ld++;
+  const land=airL(ld)?null:ld;
+  const rise=hipY[to]-hipY[apex];
+  if(rise<0.05*H)return fail('Прыжок не найден. Проверь, что камера неподвижна и в кадре ты один.');
+  // направление движения
+  let dir=1;{
+    const i0=idxAt(t[to]-0.6),dx=hipX[to]-hipX[i0];
+    if(Math.abs(dx)>0.08*H)dir=Math.sign(dx);
+    else{let s=0;for(const i of rng(t[to]-0.3,t[to]+0.3))s+=X[L.nose][i]-(X[L.earL][i]+X[L.earR][i])/2;dir=s>=0?1:-1}
+  }
+  const speedOf=j=>{const vx=deriv(X[j],t),vy=deriv(Y[j],t);return vx.map((v,i)=>Math.hypot(v,vy[i]))};
+  const spWr={L:speedOf(L.wrL),R:speedOf(L.wrR)};
+  const flEnd=land!=null?land:Math.min(n-1,apex+(apex-to));
+  const flight=[];for(let i=to;i<=flEnd;i++)flight.push(i);
+  let hand=opts.hand;
+  if(hand!=='L'&&hand!=='R'){
+    const mx=s=>{const sh=s==='L'?L.shL:L.shR,wr=s==='L'?L.wrL:L.wrR;let m=0;for(const i of flight)if(t[i]>=t[to]+0.12&&Y[wr][i]<Y[sh][i])m=Math.max(m,spWr[s][i]);return m};
+    hand=mx('L')>mx('R')?'L':'R';
+  }
+  const S=hand==='L'?L.shL:L.shR,E=hand==='L'?L.elL:L.elR,W=hand==='L'?L.wrL:L.wrR;
+  const gS=hand==='L'?L.shR:L.shL,gW=hand==='L'?L.wrR:L.wrL;
+  const spW=spWr[hand];
+  // «лук»: локоть максимально отведён назад (ищем не раньше 0.06 с после отрыва, чтобы не спутать с махом руками)
+  const backOf=i=>-dir*(X[E][i]-X[S][i]);
+  const userC=Number.isInteger(opts.contactIdx)&&opts.contactIdx>to&&opts.contactIdx<n;
+  const bowIn=(a,b)=>{let r=null,m=-1e9;for(let i=a;i<=b;i++)if(t[i]>=t[to]+0.06&&backOf(i)>m){m=backOf(i);r=i}return r};
+  let bow=bowIn(to,userC?opts.contactIdx:flEnd);
+  // контакт: пик скорости кисти выше головы после «лука»
+  let autoContact=null,ms=-1;
+  for(const i of flight)if((bow==null||i>bow)&&Y[W][i]<Y[L.nose][i]&&spW[i]>ms){ms=spW[i];autoContact=i}
+  if(autoContact==null){autoContact=flight[flight.length-1];for(const i of flight)if(Y[W][i]<Y[W][autoContact])autoContact=i}
+  const c=userC?opts.contactIdx:autoContact;
+  if(bow==null||bow>c)bow=c;
+
+  const M=[],mm={};
+  const add=(id,phase,name,value,unit,dig,conf,how,txt)=>{
+    const th=T[id];const st=th?statusOf(value,th):(value==null?'na':'info');
+    const o={id,phase,name,value:value==null||!isFinite(value)?null:+value.toFixed(dig),unit,status:st,target:th?th.target:'',src:th?th.src:'',conf:value==null?'low':conf,how,txt:txt||null};
+    M.push(o);mm[id]=o;
+  };
+  const legs=[L.hipL,L.hipR,L.knL,L.knR,L.anL,L.anR],hips=[L.hipL,L.hipR],arm=[S,E,W];
+  const kneeAt=i=>{const a=ang(L.hipL,L.knL,L.anL,i),b=ang(L.hipR,L.knR,L.anR,i);const va=V[L.knL][i],vb=V[L.knR][i];return va+vb>0?(a*va+b*vb)/(va+vb):(a+b)/2};
+
+  // ---- Разбег
+  const vx=smooth(deriv(hipX,t),Math.max(3,Math.round(0.1/dtm)|1));
+  {
+    const ii=rng(t[to]-0.8,t[to]);
+    const v=Math.max(...ii.map(i=>dir*vx[i]))/H*hM;
+    add('approachSpeed','Разбег','Скорость разбега',v,'м/с',1,confOf(hips,ii),'Макс. горизонтальная скорость таза за 0.8 с до отрыва');
+    let ac=null;
+    if(t[to]-0.9>=t[0]){
+      const a=rng(t[to]-0.3,t[to]-0.05),b=rng(t[to]-0.9,t[to]-0.5);
+      const ma=a.reduce((s,i)=>s+dir*vx[i],0)/a.length,mb2=b.reduce((s,i)=>s+dir*vx[i],0)/b.length;
+      if(mb2>0.3*H)ac=ma/mb2;
+    }
+    add('accel','Разбег','Ускорение к концу',ac,'×',2,confOf(hips,ii),'Скорость в последние 0.3 с ÷ скорость за 0.5–0.9 с до отрыва');
+    // напрыжка: разница постановки стоп
+    const tdOf=(foot,an)=>{
+      const sp=smooth(speedOf(an),3);
+      const on=i=>foot[i]>=G-0.05*H&&sp[i]<1.0*H;
+      let i=to,lim=idxAt(t[to]-0.12);
+      while(i>lim&&!on(i))i--;
+      if(!on(i))return null;
+      while(i>0&&on(i-1))i--;
+      return t[i];
+    };
+    const a=tdOf(footL,L.anL),b=tdOf(footR,L.anR);
+    const sc=(a!=null&&b!=null)?Math.abs(a-b):null;
+    const cf=confOf([L.anL,L.anR],rng(t[to]-0.5,t[to]));
+    add('stepClose','Разбег','Напрыжка «раз‑два»',sc,'с',2,cf==='high'?'mid':cf,'Время между постановкой первой и второй стопы перед прыжком');
+  }
+  // ---- Отталкивание
+  {
+    const ii=rng(t[to]-0.35,t[to]);
+    add('kneeTakeoff','Отталкивание','Сгиб коленей',Math.min(...ii.map(kneeAt)),'°',0,confOf(legs,ii),'Минимальный угол бедро‑колено‑стопа за 0.35 с до отрыва');
+    const jj=rng(t[to]-0.5,t[to]);
+    const back=i=>{
+      const f=(s,w2)=>Math.atan2(-dir*(X[w2][i]-X[s][i]),Y[w2][i]-Y[s][i])*180/Math.PI;
+      return (f(L.shL,L.wrL)+f(L.shR,L.wrR))/2;
+    };
+    add('backswing','Отталкивание','Мах руками назад',Math.max(...jj.map(back)),'°',0,confOf([L.shL,L.shR,L.wrL,L.wrR],jj),'Макс. отведение рук назад от вертикали перед отрывом');
+    let al=null;
+    for(const i of rng(t[to]-0.3,t[c])){if((Y[L.wrL][i]+Y[L.wrR][i])/2<shY[i]){al=t[i]-t[to];break}}
+    add('armLift','Отталкивание','Руки вверх к отрыву',al,'с',2,confOf([L.wrL,L.wrR],rng(t[to]-0.1,t[to]+0.2)),'Когда кисти поднялись выше плеч относительно момента отрыва (минус — до отрыва)');
+  }
+  // ---- Прыжок
+  {
+    const jh=rise/H*hCm;
+    let fl=null;if(land!=null){const Tf=t[land]-t[to];fl=981*Tf*Tf/8}
+    let cf=confOf(hips,flight);
+    if(fl!=null&&Math.abs(fl-jh)/Math.max(jh,1)>0.35&&cf==='high')cf='mid';
+    add('jump','Прыжок','Высота прыжка',jh,'см',0,cf,'Подъём таза от отрыва до пика, в пересчёте на твой рост'+(fl!=null?'. По времени полёта: '+fl.toFixed(0)+' см':''));
+    const dr=land!=null?dir*(hipX[land]-hipX[to])/H*hCm:null;
+    add('drift','Прыжок','Пролёт вперёд',dr,'см',0,cf,'Смещение таза по горизонтали от отрыва до приземления');
+  }
+  // ---- Замах
+  {
+    const ii=[];for(let i=to;i<=c;i++)ii.push(i);
+    add('elbowHeightBow','Замах','Локоть относительно плеча',(Y[S][bow]-Y[E][bow])/H*100,'% роста',0,confOf([S,E],[bow]),'Высота локтя над плечом в момент максимального отведения (плюс — выше плеча)');
+    add('elbowAngleBow','Замах','Сгиб локтя в «луке»',Math.min(...ii.map(i=>ang(S,E,W,i))),'°',0,confOf(arm,ii),'Минимальный угол в локте бьющей руки от отрыва до контакта');
+    add('guideArm','Замах','Небьющая рука',Math.max(...ii.map(i=>(Y[gS][i]-Y[gW][i])/H*100)),'% роста',0,confOf([gS,gW],ii),'Насколько кисть небьющей руки поднимается выше плеча в полёте');
+  }
+  // ---- Контакт
+  {
+    const cc=[Math.max(0,c-1),c,Math.min(n-1,c+1)];
+    const cf=confOf(arm,cc);
+    add('elbowContact','Контакт','Рука на контакте',Math.max(...cc.map(i=>ang(S,E,W,i))),'°',0,cf,'Угол в локте в момент контакта (180° — прямая рука)');
+    const armLen=pct(frames.map((f,i)=>dist(S,E,i)+dist(E,W,i)),0.9);
+    add('reach','Контакт','Высота точки удара',(Y[S][c]-Y[W][c])/armLen*100,'% руки',0,cf,'Высота кисти над плечом в долях длины руки: 100% — рука вертикально вверх');
+    add('front','Контакт','Мяч перед плечом',dir*(X[W][c]-X[S][c])/H*100,'% роста',0,cf,'Положение кисти относительно бьющего плеча по ходу движения (минус — за головой)');
+    const ii=rng(t[c]-0.08,t[c]+dtm*1.01);
+    add('handSpeed','Контакт','Скорость кисти',Math.max(...ii.map(i=>spW[i]))/H*hM,'м/с',1,cf,'Макс. скорость кисти за 0.08 с до контакта');
+    // кинетическая цепь по угловым скоростям сегментов
+    const unwrap=a=>{const o=a.slice();for(let i=1;i<o.length;i++){let d=o[i]-o[i-1];while(d>Math.PI){o[i]-=2*Math.PI;d-=2*Math.PI}while(d<-Math.PI){o[i]+=2*Math.PI;d+=2*Math.PI}}return o};
+    const seg=(ax,ay,bx,by)=>deriv(unwrap(ax.map((v,i)=>Math.atan2(by[i]-ay[i],bx[i]-v))),t).map(Math.abs);
+    const wTr=seg(hipX,hipY,shX,shY),wUp=seg(X[S],Y[S],X[E],Y[E]),wFo=seg(X[E],Y[E],X[W],Y[W]);
+    const kk=rng(t[c]-0.3,t[c]+dtm*1.01);
+    const pk=a=>{let b=kk[0];for(const i of kk)if(a[i]>a[b])b=i;return t[b]};
+    const tT=pk(wTr),tU=pk(wUp),tF=pk(wFo),tol=dtm*1.01;
+    const okc=tT<=tU+tol&&tU<=tF+tol;
+    const order=[['корпус',tT],['плечо',tU],['предплечье',tF]].sort((a,b)=>a[1]-b[1]).map(a=>a[0]).join(' → ');
+    const o={id:'chain',phase:'Контакт',name:'Порядок «хлыста»',value:okc?1:0,unit:'',status:okc?'ok':'warn',target:'корпус → плечо → предплечье',src:'coach',conf:confOf([S,E,W].concat(hips),kk),how:'Порядок пиков угловой скорости корпуса, плеча и предплечья за 0.3 с до контакта',txt:order};
+    M.push(o);mm.chain=o;
+  }
+  // ---- Тайминг
+  {
+    const cf=userC?'high':'mid';
+    add('contactVsApex','Тайминг','Контакт относительно пика',(t[c]-t[apex])*1000,'мс',0,cf,'Минус — удар на взлёте (опаздываешь), плюс — на спуске (прыгнул рано)'+(userC?'':'. Контакт определён автоматически — проверь метку'));
+    add('heightLost','Тайминг','Потеря высоты к контакту',Math.max(0,(hipY[c]-hipY[apex])/rise*100),'%',0,cf,'На сколько таз ниже пика прыжка в момент контакта');
+    add('hang','Тайминг','Отрыв → контакт',t[c]-t[to],'с',2,cf,'Время от отрыва до контакта');
+    if(Number.isInteger(opts.setIdx)&&opts.setIdx>=0&&opts.setIdx<n){
+      add('setToTakeoff','Тайминг','Пас → отрыв',t[to]-t[opts.setIdx],'с',2,'high','Время от ухода мяча с рук связующего до твоего отрыва. Сравнивай между попытками на одинаковом пасе');
+      add('setToContact','Тайминг','Пас → контакт',t[c]-t[opts.setIdx],'с',2,'high','Полное время полёта паса до удара');
+    }
+  }
+  // ---- Приземление
+  {
+    let asym=null,kl=null;
+    if(land!=null){
+      const first=f=>{for(let i=apex;i<n;i++)if(f[i]>=G-(cfg.groundTol+0.01)*H)return t[i];return null};
+      const a=first(footL),b=first(footR);
+      if(a!=null&&b!=null)asym=Math.abs(a-b)*1000;
+      if(t[n-1]>=t[land]+0.15){const ii=rng(t[land],t[land]+0.35);kl=Math.min(...ii.map(kneeAt))}
+    }
+    const ii=land!=null?rng(t[land],t[land]+0.3):[];
+    add('landAsym','Приземление','Две ноги одновременно',asym,'мс',0,confOf([L.anL,L.anR],ii),'Разница во времени касания пола левой и правой стопой');
+    add('kneeLanding','Приземление','Амортизация коленями',kl,'°',0,confOf(legs,ii),'Минимальный угол в коленях за 0.35 с после приземления');
+  }
+
+  // ---- вердикт по таймингу
+  const d=mm.contactVsApex.value,lost=mm.heightLost.value;
+  let timing;
+  if(d>T.contactVsApex.ok[1]&&lost>T.heightLost.ok[1])
+    timing={verdict:'early',title:'Прыгаешь рано',text:'Контакт через '+d+' мс после пика прыжка: ты уже падаешь и теряешь '+lost+'% высоты ('+Math.round(lost/100*mm.jump.value)+' см).'};
+  else if(d<T.contactVsApex.ok[0])
+    timing={verdict:'late',title:'Опаздываешь',text:'Контакт за '+(-d)+' мс до пика прыжка: бьёшь на взлёте, не добрав высоту и не закончив замах.'};
+  else timing={verdict:'ok',title:'Тайминг в порядке',text:'Контакт в пределах '+Math.abs(d)+' мс от пика прыжка — ты встречаешь мяч в верхней точке.'};
+  timing.auto=!userC;
+  const sig=[];
+  if(timing.verdict!=='early'&&mm.elbowAngleBow.status==='bad'&&mm.elbowContact.status!=='ok')sig.push('Рука не успевает согнуться в замах и выпрямиться — замах начинается поздно.');
+  if(mm.armLift.status==='bad')sig.push('Руки поднимаются уже после отрыва — мах опаздывает.');
+  if(mm.front.status!=='ok'&&mm.front.value!=null&&mm.front.value<T.front.ok[0])sig.push('Мяч оказывается над головой или за ней — ты забегаешь под мяч.');
+  timing.signals=sig;
+
+  return {ok:true,n,t,X,Y,H,dir,hand,G,dtm,keys:{takeoff:to,apex,bow,contact:c,land,autoContact,set:Number.isInteger(opts.setIdx)?opts.setIdx:null},userContact:userC,metrics:M,m:mm,timing,recs:recommend(mm,timing),good:M.filter(x=>x.status==='ok'&&x.conf!=='low').map(x=>x.name)};
+}
+
+// Правила: метрика вне зоны → диагноз → подсказка‑хак → упражнения. pri — важность.
+const RULES=[
+ {id:'land1',pri:10,m:'landAsym',title:'Приземляешься на одну ногу',why:v=>'Стопы касаются пола с разницей '+v+' мс — вся нагрузка идёт в одно колено и голеностоп.',hack:'После удара думай не о мяче, а о полу: «две стопы — мягко — тихо». Громкое приземление = жёсткое.',drills:['Прыжки вверх с приземлением «без звука» на две ноги, 3×8','Спрыгивание с тумбы 30 см с фиксацией 2 с в полуприседе, 3×6']},
+ {id:'landStiff',pri:9,m:'kneeLanding',title:'Жёсткое приземление на прямые ноги',why:v=>'Колени сгибаются только до '+v+'° — удар не гасится мышцами.',hack:'Приземляйся «в лифт»: носок → пятка → колени едут вниз, таз назад, как будто садишься на стул.',drills:['Спрыгивание с тумбы в полуприсед с паузой, 3×6','Серии из 3 прыжков с мягким приземлением, 3 подхода']},
+ {id:'early',pri:8,t:'early',title:'Прыгаешь рано — бьёшь на спуске',why:(v,m)=>'Контакт через '+m.contactVsApex.value+' мс после пика, потеря '+m.heightLost.value+'% высоты.',hack:'Начинай разбег позже, а не медленнее. Первый шаг — маленький «шаг ожидания»: смотри, куда летит пас, и только на последних двух шагах взрывайся. Ритм: «ме‑е‑едленно… БЫСТРО‑БЫСТРО».',drills:['Партнёр набрасывает высокий мяч, стартуешь только когда мяч в верхней точке, 10 повторов','Разбег + прыжок + поймать мяч двумя руками в высшей точке (без удара), 10 повторов']},
+ {id:'late',pri:8,t:'late',title:'Опаздываешь — бьёшь на взлёте',why:(v,m)=>'Контакт за '+(-m.contactVsApex.value)+' мс до пика: мяч приходит раньше, чем ты набрал высоту.',hack:'Сделай первый шаг в момент, когда мяч касается рук связующего, и стой перед разбегом на шаг ближе к сетке. Руки отводи назад уже на предпоследнем шаге, локоть — сразу в отрыве.',drills:['Разбег под счёт партнёра: «пас» — шаг, «раз‑два» — напрыжка, 10 повторов','Ловля мяча в высшей точке прыжка с паса связующего, 10 повторов']},
+ {id:'under',pri:7,m:'front',side:'lo',title:'Забегаешь под мяч',why:v=>'Кисть на контакте на '+v+'% роста относительно плеча — мяч над головой или сзади, бить вниз нечем.',hack:'Заканчивай разбег на полшага раньше и держи мяч «в окне» перед бьющим плечом — так, чтобы видеть его под небьющей рукой, которой показываешь на мяч.',drills:['Разбег + прыжок + поймать мяч на прямых руках перед собой, 10 повторов','Удар стоя у стены: подброс чуть вперёд от бьющего плеча, 2×15']},
+ {id:'far',pri:5,m:'front',side:'hi',title:'Тянешься к мячу далеко вперёд',why:v=>'Кисть на '+v+'% роста впереди плеча — мяч слишком далеко, удар получается сверху‑вниз по касательной или в сетку.',hack:'Последний шаг разбега делай длиннее и ближе к мячу: напрыжка должна принести тебя под точку на 30–40 см за мячом.',drills:['Разбег к подвешенному/удерживаемому мячу с касанием прямой рукой над плечом, 10 повторов']},
+ {id:'bentArm',pri:6,m:'elbowContact',title:'Бьёшь согнутой рукой',why:v=>'Локоть на контакте '+v+'° — теряешь 10–20 см высоты точки удара.',hack:'Бей «с верхней полки»: тянись к мячу вверх, как будто достаёшь банку с высокой полки, и только там закрывай кисть.',drills:['Удары в стену/пол стоя с контактом на полностью прямой руке, 2×20','Касание отметки на стене в прыжке прямой рукой, 3×6']},
+ {id:'lowReach',pri:6,m:'reach',title:'Низкая точка удара',why:v=>'Кисть на контакте только на '+v+'% длины руки над плечом — бьёшь сбоку или ниже возможного.',hack:'Плечо бьющей руки тяни к уху: рука идёт вверх рядом с головой, а не в сторону.',drills:['Удар стоя с набрасывания с задачей попасть по мячу в самой высокой точке, 2×15','Броски теннисного мяча в пол из высокой точки, 2×15']},
+ {id:'lowElbow',pri:5,m:'elbowHeightBow',title:'Локоть в замахе ниже плеча',why:v=>'Локоть на '+(-v)+'% роста ниже плеча — получается толчок, а не хлёст.',hack:'В отрыве тяни локоть назад‑вверх, «как тетиву лука к уху». Кисть рядом с ухом, локоть смотрит в потолок позади тебя.',drills:['«Лук» у стены: 15 замахов с локтем выше плеча, пауза 1 с','Броски теннисного мяча с высоким локтем, 2×15']},
+ {id:'noBow',pri:5,m:'elbowAngleBow',side:'hi',title:'Нет замаха — рука идёт прямой',why:v=>'Минимальный сгиб локтя '+v+'° — рука не «заряжается».',hack:'Обе руки вверх в отрыве, затем бьющую согни и отведи: «небьющая показывает на мяч, бьющая натягивает лук».',drills:['Замах в прыжке без мяча перед зеркалом/камерой, 2×10','Удар с собственного подброса с паузой в «луке», 2×10']},
+ {id:'chain',pri:4,m:'chain',title:'Бьёшь одной рукой, корпус не включается',why:(v,m)=>'Сейчас порядок: '+m.chain.txt+'. Нужен: корпус → плечо → предплечье.',hack:'Сначала грудь к мячу, потом локоть, потом кисть — как щелчок хлыста. Плечи разворачиваются первыми, рука «опаздывает» за ними.',drills:['Броски набивного мяча 1 кг из‑за головы двумя руками в пол, 3×8','Бросок теннисного мяча в прыжке с разворотом корпуса, 2×10']},
+ {id:'guide',pri:3,m:'guideArm',title:'Небьющая рука не работает',why:()=>'Небьющая рука не поднимается выше плеча — теряешь баланс и разворот корпуса.',hack:'Небьющей рукой «покажи пальцем на мяч», а в момент удара резко опусти её к животу — это разгоняет бьющую.',drills:['Замах в прыжке с фиксацией: небьющая рука указывает на мяч, 2×10']},
+ {id:'knees',pri:4,m:'kneeTakeoff',side:'hi',title:'Мало приседаешь перед прыжком',why:v=>'Колени сгибаются только до '+v+'° — ноги почти не работают на прыжок.',hack:'На напрыжке «сядь на невидимый стул» и сразу вверх. Пятки касаются пола, таз назад.',drills:['Напрыжка «раз‑два» + прыжок с касанием отметки, 3×6','Прыжки из полуприседа с махом руками, 3×8']},
+ {id:'kneesDeep',pri:3,m:'kneeTakeoff',side:'lo',title:'Слишком глубокий присед',why:v=>'Колени сгибаются до '+v+'° — проваливаешься и теряешь скорость разбега.',hack:'Присед короткий и быстрый, как пружина: «коснулся — вылетел».',drills:['Прыжки в глубину с тумбы 20–30 см с мгновенным выпрыгиванием, 3×6']},
+ {id:'backswing',pri:4,m:'backswing',title:'Слабый мах руками',why:v=>'Руки отводятся назад только на '+v+'° — мах даёт до 10–15% высоты прыжка.',hack:'На предпоследнем шаге обе руки прямые назад, ладони «смотрят в потолок»; на напрыжке бросай их вперёд‑вверх.',drills:['Прыжки с места с полным махом, 3×8','Напрыжка без мяча с акцентом на руки, 2×10']},
+ {id:'armLift',pri:4,m:'armLift',title:'Руки опаздывают за ногами',why:v=>'Кисти поднимаются выше плеч через '+v+' с после отрыва.',hack:'Руки должны «вытащить» тебя вверх: к моменту отрыва обе кисти уже на уровне лица.',drills:['Прыжки с места: руки и ноги стартуют одновременно, 3×8']},
+ {id:'slow',pri:3,m:'approachSpeed',title:'Медленный разбег',why:v=>'Скорость разбега '+v+' м/с — мало горизонтальной скорости для перевода в прыжок.',hack:'Отойди на шаг дальше от сетки и сделай два последних шага агрессивнее. Длинный предпоследний, короткий последний.',drills:['Разбег в 3 шага с касанием отметки, 3×6']},
+ {id:'accel',pri:3,m:'accel',title:'Разбег без ускорения',why:v=>'Последние шаги в '+v+'× от скорости первых — ты тормозишь перед прыжком.',hack:'Ритм «ме‑едленно — быстрее — БЫСТРО‑БЫСТРО». Замедляться можно только в начале.',drills:['Разбег под хлопки партнёра с ускоряющимся ритмом, 10 повторов']},
+ {id:'stepClose',pri:3,m:'stepClose',side:'hi',title:'Медленная напрыжка',why:v=>'Между постановкой стоп '+v+' с — скорость разбега гаснет до прыжка.',hack:'Последние два шага — один звук: «та‑ТАМ». Вторая нога догоняет первую, а не шагает отдельно.',drills:['Напрыжка «раз‑два» на месте и с шага под ритм, 3×8']},
+ {id:'drift',pri:5,m:'drift',title:'Улетаешь вперёд — в сетку',why:v=>'Пролёт '+v+' см по горизонтали: высота уходит в длину, риск заступа и касания сетки.',hack:'Последний шаг ставь стопой чуть развернув внутрь и «упирайся» — как стопор. Прыгай вверх, а не в мяч.',drills:['Прыжок с разбега вдоль линии: приземлиться не дальше 50 см от точки отрыва, 3×6']}
+];
+function recommend(mm,timing){
+  const out=[];
+  for(const r of RULES){
+    let sev=0,val=null;
+    if(r.t){
+      if(timing.verdict!==r.t)continue;
+      sev=mm.contactVsApex.status==='bad'?2:1;
+      if(timing.auto)sev=Math.min(sev,1.5);
+    }else{
+      const x=mm[r.m];
+      if(!x||x.conf==='low'||x.value==null)continue;
+      if(x.status!=='warn'&&x.status!=='bad')continue;
+      const th=CONFIG.T[r.m];
+      if(r.side&&th){
+        const lo=th.ok[0]!=null&&x.value<th.ok[0];
+        if((r.side==='lo')!==lo)continue;
+      }
+      sev=x.status==='bad'?2:1;val=x.value;
+    }
+    out.push({id:r.id,title:r.title,sev,score:sev*r.pri,why:r.why(val,mm),hack:r.hack,drills:r.drills});
+  }
+  out.sort((a,b)=>b.score-a.score);
+  return out.slice(0,3);
+}
+// CORE-END ==================================================================
+</script>
+
+<script type="module">
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const video=$('video'),view=$('view'),vctx=view.getContext('2d');
+const work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadFrequently:false});
+const S={frames:null,res:null,idx:0,marks:{contact:null,set:null},busy:false,cancel:false,play:null,file:'',bmp:new Map(),tok:0};
+let ts=0,lmk=null,lmkKey='';
+
+// ---------- настройки
+const SET_KEYS=['sHeight','sHand','sSlow','sFps','sModel','sMulti'];
+try{const s=JSON.parse(localStorage.getItem('spikelab.set')||'{}');for(const k of SET_KEYS)if(s[k]!=null)$(k).value=s[k]}catch(e){}
+for(const k of SET_KEYS)$(k).addEventListener('change',()=>{
+  const o={};for(const q of SET_KEYS)o[q]=$(q).value;
+  try{localStorage.setItem('spikelab.set',JSON.stringify(o))}catch(e){}
+  if((k==='sHeight'||k==='sHand')&&S.frames)compute();
+});
+const opt=()=>({heightCm:+$('sHeight').value||180,hand:$('sHand').value,slow:+$('sSlow').value||1});
+
+// ---------- вкладки
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  for(const t of ['A','H','G'])$('tab'+t).classList.toggle('hide',t!==b.dataset.tab);
+  if(b.dataset.tab==='H')renderHistory();
+});
+
+// ---------- загрузка видео
+$('file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  S.file=f.name;$('fileName').textContent=f.name+' · '+(f.size/1e6).toFixed(0)+' МБ';
+  if(video.src)URL.revokeObjectURL(video.src);
+  video.src=URL.createObjectURL(f);
+  $('videoBox').classList.remove('hide');$('results').classList.add('hide');
+  setStatus('Загружаю видео…');
+  await new Promise(r=>{video.onloadedmetadata=r;video.onerror=r});
+  if(!video.duration){setStatus('Не удалось открыть видео. Попробуй другой файл (MP4/MOV).');return}
+  try{await video.play();video.pause()}catch(err){}
+  setStatus('Длина '+video.duration.toFixed(1)+' с, '+video.videoWidth+'×'+video.videoHeight+'. Нажми «Найти удар и разобрать».');
+};
+function setStatus(s){$('status').textContent=s}
+function setBar(p){$('bar').classList.toggle('hide',p==null);if(p!=null)$('bar').firstElementChild.style.width=Math.round(p*100)+'%'}
+function busy(b){S.busy=b;S.cancel=false;$('btnAuto').disabled=b;$('btnHere').disabled=b;$('btnCancel').classList.toggle('hide',!b);if(!b)setBar(null)}
+$('btnCancel').onclick=()=>{S.cancel=true};
+
+// ---------- MediaPipe
+async function getLandmarker(){
+  const key=$('sModel').value+'/'+$('sMulti').value;
+  if(lmk&&lmkKey===key)return lmk;
+  setStatus('Загружаю модель распознавания позы (один раз, ~10 МБ)…');
+  const V='0.10.14';
+  const mp=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@'+V+'/vision_bundle.mjs');
+  const fs=await mp.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@'+V+'/wasm');
+  const model='https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_'+$('sModel').value+'/float16/1/pose_landmarker_'+$('sModel').value+'.task';
+  const mk=delegate=>mp.PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:model,delegate},runningMode:'VIDEO',numPoses:+$('sMulti').value,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});
+  if(lmk){try{lmk.close()}catch(e){}}
+  try{lmk=await mk('GPU')}catch(e){lmk=await mk('CPU')}
+  lmk._mk=mk;lmkKey=key;return lmk;
+}
+function seek(tv){
+  return new Promise(res=>{
+    if(Math.abs(video.currentTime-tv)<1e-4)return res();
+    let done=false;
+    const fin=()=>{if(done)return;done=true;video.removeEventListener('seeked',on);res()};
+    const on=()=>{
+      if(video.requestVideoFrameCallback){const to=setTimeout(fin,80);video.requestVideoFrameCallback(()=>{clearTimeout(to);fin()})}
+      else requestAnimationFrame(()=>fin());
+    };
+    video.addEventListener('seeked',on);video.currentTime=tv;setTimeout(fin,2000);
+  });
+}
+function sizeWork(){
+  const k=Math.min(1,CONFIG.maxSide/Math.max(video.videoWidth,video.videoHeight));
+  work.width=Math.round(video.videoWidth*k);work.height=Math.round(video.videoHeight*k);
+}
+let prevC=null;
+function pickPose(list){
+  if(!list||!list.length)return null;
+  let best=list[0];
+  if(list.length>1){
+    let bs=-1e9;
+    for(const p of list){
+      const cx=(p[23].x+p[24].x)/2,cy=(p[23].y+p[24].y)/2;
+      let sc;
+      if(prevC)sc=-Math.hypot(cx-prevC.x,cy-prevC.y);
+      else{let a=1,b=0;for(const q of p){a=Math.min(a,q.y);b=Math.max(b,q.y)}sc=b-a}
+      if(sc>bs){bs=sc;best=p}
+    }
+  }
+  prevC={x:(best[23].x+best[24].x)/2,y:(best[23].y+best[24].y)/2};
+  return best.map(p=>({x:p.x*work.width,y:p.y*work.height,v:p.visibility==null?1:p.visibility}));
+}
+async function grab(tv0,tv1,stepV,keep,label){
+  const slow=opt().slow,out=[],N=Math.max(1,Math.floor((tv1-tv0)/stepV)+1);
+  prevC=null;
+  for(let k=0;k<N;k++){
+    if(S.cancel)throw new Error('cancel');
+    const tv=tv0+k*stepV;
+    await seek(tv);
+    wctx.drawImage(video,0,0,work.width,work.height);
+    let lm=null;
+    try{lm=pickPose(lmk.detectForVideo(work,ts+=40).landmarks)}
+    catch(e){
+      if(k===0&&lmk._mk){const mk=lmk._mk;lmk=await mk('CPU');lmk._mk=mk;try{lm=pickPose(lmk.detectForVideo(work,ts+=40).landmarks)}catch(e2){}}
+    }
+    const f={t:tv/slow,tv,lm};
+    if(keep)f.blob=await new Promise(r=>work.toBlob(r,'image/jpeg',0.72));
+    out.push(f);
+    setBar((k+1)/N);setStatus(label+' '+(k+1)+'/'+N);
+    if(k%3===0)await new Promise(r=>setTimeout(r,0));
+  }
+  return out;
+}
+async function estimateFps(){
+  const s=$('sFps').value;if(s!=='auto')return +s;
+  if(!video.requestVideoFrameCallback)return 30;
+  return new Promise(res=>{
+    const mt=[];let stop=false;
+    const cb=(now,meta)=>{mt.push(meta.mediaTime);if(!stop)video.requestVideoFrameCallback(cb)};
+    video.currentTime=Math.min(0.2,video.duration/3);
+    video.requestVideoFrameCallback(cb);
+    video.play().catch(()=>{});
+    setTimeout(()=>{
+      stop=true;video.pause();
+      const d=[];for(let i=1;i<mt.length;i++){const x=mt[i]-mt[i-1];if(x>0.002)d.push(x)}
+      if(d.length<4)return res(30);
+      const f=1/median(d);
+      res([24,25,30,50,60].reduce((a,b)=>Math.abs(b-f)<Math.abs(a-f)?b:a));
+    },800);
+  });
+}
+async function run(center){
+  if(S.busy||!video.duration)return;
+  busy(true);stopPlay();
+  try{
+    await getLandmarker();sizeWork();
+    const slow=opt().slow,dur=video.duration-0.02;
+    let cv=center;
+    if(cv==null){
+      if(dur/slow>CONFIG.maxAutoSec){setStatus('Ролик длиннее '+CONFIG.maxAutoSec+' с. Поставь ползунок на момент удара и нажми «Удар на этом кадре».');busy(false);return}
+      if(dur/slow<=CONFIG.windowBefore+CONFIG.windowAfter+0.5)cv=null;
+      else{
+        const co=await grab(0,dur,CONFIG.coarseStep*slow,false,'Ищу прыжок…');
+        let best=null;
+        for(const f of co)if(f.lm){const y=(f.lm[23].y+f.lm[24].y)/2;if(!best||y<best.y)best={y,tv:f.tv}}
+        if(!best){setStatus('Не нашёл человека в кадре. Проверь ракурс и освещение.');busy(false);return}
+        cv=best.tv;
+      }
+    }
+    const fps=await estimateFps();
+    const rate=Math.min(fps*slow,CONFIG.maxRealFps),stepV=slow/rate;
+    const tv0=cv==null?0:Math.max(0,cv-CONFIG.windowBefore*slow),tv1=cv==null?dur:Math.min(dur,cv+CONFIG.windowAfter*slow);
+    const fr=await grab(tv0,tv1,stepV,true,'Разбираю кадры…');
+    S.frames=fr;S.marks={contact:null,set:null};S.bmp.forEach(b=>b.close&&b.close());S.bmp.clear();
+    S.fps=rate;
+    setStatus('Готово: '+fr.length+' кадров, '+Math.round(rate)+' замеров/с.');
+    compute(true);
+  }catch(e){
+    if(e.message==='cancel')setStatus('Остановлено.');
+    else{console.error(e);setStatus('Ошибка: '+e.message+'. Нужен интернет для первой загрузки модели.')}
+  }
+  busy(false);
+}
+$('btnAuto').onclick=()=>run(null);
+$('btnHere').onclick=()=>run(video.currentTime);
+
+// ---------- расчёт и вывод
+function compute(jump){
+  const o=opt();
+  const r=analyze(S.frames,{heightCm:o.heightCm,hand:o.hand,contactIdx:S.marks.contact,setIdx:S.marks.set});
+  S.res=r;
+  if(!r.ok){$('results').classList.add('hide');setStatus(r.error);return}
+  $('results').classList.remove('hide');
+  view.width=work.width;view.height=work.height;
+  $('scrub').max=r.n-1;
+  if(jump)S.idx=r.keys.contact;
+  renderAll();show(S.idx);
+  if(jump)$('results').scrollIntoView({behavior:'smooth'});
+}
+const KEYN=[['takeoff','Отрыв'],['bow','Замах'],['apex','Пик'],['contact','Контакт'],['land','Приземление'],['set','Пас']];
+const ST={ok:'в норме',warn:'поправить',bad:'проблема',info:'',na:'нет данных'};
+function fmtVal(m){if(m.txt)return esc(m.txt);if(m.value==null)return '—';return m.value+(m.unit?' '+m.unit:'')}
+function renderAll(){
+  const r=S.res;
+  $('chips').innerHTML=KEYN.filter(k=>r.keys[k[0]]!=null).map(k=>'<button class="sm" data-i="'+r.keys[k[0]]+'">'+k[1]+'</button>').join('');
+  $('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>show(+b.dataset.i));
+  const tm=r.timing;
+  $('timing').className='card verdict '+tm.verdict;
+  $('timing').innerHTML='<div class="sub">Тайминг</div><b class="big">'+esc(tm.title)+'</b><div>'+esc(tm.text)+'</div>'+
+    tm.signals.map(s=>'<div class="sub">• '+esc(s)+'</div>').join('')+
+    (tm.auto?'<div class="sub" style="color:var(--warn);margin-top:6px">Контакт определён автоматически. Проверь кадр и нажми «Контакт здесь» — тогда оценка тайминга будет точной.</div>':'');
+  $('recs').innerHTML=r.recs.length?r.recs.map((x,i)=>'<div class="card rec s'+Math.round(x.sev)+'"><b>'+(i+1)+'. '+esc(x.title)+'</b><div class="sub">'+esc(x.why)+'</div><div class="hack">💡 '+esc(x.hack)+'</div><div class="sub">Упражнения:</div><ul>'+x.drills.map(d=>'<li>'+esc(d)+'</li>').join('')+'</ul></div>').join('')
+    :'<div class="card">Явных ошибок не найдено. Работай над высотой прыжка и скоростью кисти — следи за ними в «Истории».</div>';
+  $('goodCard').innerHTML='<b class="good">Что уже хорошо</b><div class="sub">'+(r.good.length?esc(r.good.join(' · ')):'пока нечего отметить — начни с первой правки')+'</div>';
+  let h='',ph='';
+  for(const m of r.metrics){
+    if(m.phase!==ph){if(ph)h+='</table>';ph=m.phase;h+='<h3>'+ph+'</h3><table>'}
+    h+='<tr><td><span class="dot '+m.status+'"></span>'+esc(m.name)+'<div class="conf'+(m.conf==='low'?' low':'')+'">'+esc(m.how)+(m.conf==='low'&&m.value!=null?' · низкая уверенность (точки плохо видны)':m.conf==='mid'?' · средняя уверенность':'')+'</div></td><td style="white-space:nowrap;text-align:right"><b>'+fmtVal(m)+'</b><div class="conf">'+esc(m.target)+(m.src?' <span class="tag">'+(m.src==='coach'?'тренерский ориентир':'эвристика')+'</span>':'')+'</div></td></tr>';
+  }
+  $('metrics').innerHTML=h+'</table>';
+  $('saveMsg').textContent='';
+}
+const BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,31],[28,32],[27,29],[28,30]];
+async function bitmap(i){
+  if(S.bmp.has(i))return S.bmp.get(i);
+  const b=await createImageBitmap(S.frames[i].blob);
+  if(S.bmp.size>80){const k=S.bmp.keys().next().value;const o=S.bmp.get(k);o.close&&o.close();S.bmp.delete(k)}
+  S.bmp.set(i,b);return b;
+}
+function drawOverlay(ctx,i,scale){
+  const r=S.res,k=scale||1,P=j=>[r.X[j][i]*k,r.Y[j][i]*k];
+  const hs=r.hand==='L'?[11,13,15]:[12,14,16];
+  ctx.lineCap='round';
+  ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,r.G*k);ctx.lineTo(ctx.canvas.width,r.G*k);ctx.stroke();
+  // траектория кисти
+  ctx.strokeStyle='rgba(255,176,32,.7)';ctx.lineWidth=2*k;ctx.beginPath();
+  for(let q=Math.max(0,i-25);q<=i;q++){const x=r.X[hs[2]][q]*k,y=r.Y[hs[2]][q]*k;q===Math.max(0,i-25)?ctx.moveTo(x,y):ctx.lineTo(x,y)}ctx.stroke();
+  ctx.lineWidth=3*k;
+  for(const [a,b] of BONES){
+    const hit=hs.includes(a)&&hs.includes(b);
+    ctx.strokeStyle=hit?'#ffb020':'#6aa9ff';
+    ctx.beginPath();ctx.moveTo(...P(a));ctx.lineTo(...P(b));ctx.stroke();
+  }
+  ctx.fillStyle='#fff';
+  for(const j of [11,12,13,14,15,16,23,24,25,26,27,28]){const [x,y]=P(j);ctx.beginPath();ctx.arc(x,y,3*k,0,7);ctx.fill()}
+  const lab=KEYN.filter(q=>r.keys[q[0]]===i).map(q=>q[1]).join(' · ');
+  if(lab){ctx.font='bold '+Math.round(18*k)+'px sans-serif';ctx.fillStyle='rgba(0,0,0,.6)';const w=ctx.measureText(lab).width;ctx.fillRect(6*k,6*k,w+12*k,26*k);ctx.fillStyle='#ffb020';ctx.fillText(lab,12*k,25*k)}
+}
+async function show(i){
+  const r=S.res;if(!r||!r.ok)return;
+  i=Math.max(0,Math.min(r.n-1,i));S.idx=i;$('scrub').value=i;
+  const tok=++S.tok,b=await bitmap(i);
+  if(tok!==S.tok)return;
+  vctx.drawImage(b,0,0,view.width,view.height);
+  drawOverlay(vctx,i,1);
+  const dc=((r.t[i]-r.t[r.keys.contact])*1000).toFixed(0);
+  $('frameInfo').textContent='кадр '+(i+1)+'/'+r.n+' · '+(dc>0?'+':'')+dc+' мс от контакта';
+}
+$('scrub').oninput=e=>{stopPlay();show(+e.target.value)};
+$('bPrev').onclick=()=>{stopPlay();show(S.idx-1)};
+$('bNext').onclick=()=>{stopPlay();show(S.idx+1)};
+function stopPlay(){if(S.play){clearInterval(S.play);S.play=null;$('bPlay').textContent='▶ 0.25×'}}
+$('bPlay').onclick=()=>{
+  if(S.play)return stopPlay();
+  if(S.idx>=S.res.n-1)S.idx=0;
+  $('bPlay').textContent='❚❚';
+  S.play=setInterval(()=>{if(S.idx>=S.res.n-1)return stopPlay();show(S.idx+1)},S.res.dtm*4000);
+};
+$('bContact').onclick=()=>{S.marks.contact=S.idx;compute()};
+$('bSet').onclick=()=>{S.marks.set=S.idx;compute()};
+$('bReset').onclick=()=>{S.marks={contact:null,set:null};compute()};
+
+// ---------- история (IndexedDB)
+function db(){return new Promise((res,rej)=>{const q=indexedDB.open('spikelab',1);q.onupgradeneeded=()=>q.result.createObjectStore('sessions',{keyPath:'id'});q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error)})}
+async function dbAll(){const d=await db();return new Promise(r=>{const q=d.transaction('sessions').objectStore('sessions').getAll();q.onsuccess=()=>r(q.result.sort((a,b)=>b.id-a.id));q.onerror=()=>r([])})}
+async function dbPut(o){const d=await db();return new Promise((r,j)=>{const tx=d.transaction('sessions','readwrite');tx.objectStore('sessions').put(o);tx.oncomplete=r;tx.onerror=()=>j(tx.error)})}
+async function dbDel(id){const d=await db();return new Promise(r=>{const tx=d.transaction('sessions','readwrite');tx.objectStore('sessions').delete(id);tx.oncomplete=r})}
+async function thumb(i){
+  const c=document.createElement('canvas'),k=320/view.width;c.width=320;c.height=Math.round(view.height*k);
+  const x=c.getContext('2d');x.drawImage(await bitmap(i),0,0,c.width,c.height);drawOverlay(x,i,k);
+  return c.toDataURL('image/jpeg',0.6);
+}
+$('bSave').onclick=async()=>{
+  const r=S.res;if(!r||!r.ok)return;
+  const th={};for(const [k,n] of KEYN)if(k!=='set'&&k!=='apex'&&r.keys[k]!=null)th[k]=await thumb(r.keys[k]);
+  const o={id:Date.now(),date:new Date().toISOString(),note:$('note').value.trim(),file:S.file,hand:r.hand,
+    metrics:r.metrics.map(m=>({id:m.id,name:m.name,value:m.value,unit:m.unit,status:m.status,txt:m.txt,conf:m.conf})),
+    timing:{verdict:r.timing.verdict,title:r.timing.title,text:r.timing.text,auto:r.timing.auto},
+    recs:r.recs.map(x=>({id:x.id,title:x.title,hack:x.hack})),thumbs:th};
+  try{await dbPut(o);$('saveMsg').textContent='Сохранено. Главный фокус на следующую тренировку: '+(o.recs[0]?o.recs[0].title:'—');showFocus()}
+  catch(e){$('saveMsg').textContent='Не удалось сохранить: '+e.message}
+};
+function reportText(){
+  const r=S.res;let s='Разбор атакующего удара (SpikeLab)\nТайминг: '+r.timing.title+'. '+r.timing.text+'\n\nПравки:\n';
+  r.recs.forEach((x,i)=>{s+=(i+1)+'. '+x.title+' — '+x.why+'\n   Подсказка: '+x.hack+'\n'});
+  s+='\nМетрики:\n';for(const m of r.metrics)s+='- '+m.phase+' / '+m.name+': '+(m.txt||(m.value==null?'—':m.value+' '+m.unit))+' ['+ST[m.status]+(m.target?'; цель: '+m.target:'')+']\n';
+  return s;
+}
+$('bCopy').onclick=async()=>{try{await navigator.clipboard.writeText(reportText());$('saveMsg').textContent='Текст разбора скопирован.'}catch(e){$('saveMsg').textContent='Не удалось скопировать.'}};
+
+async function showFocus(){
+  const a=await dbAll(),c=$('focusCard');
+  if(!a.length||!a[0].recs.length){c.style.display='none';return}
+  c.style.display='';
+  c.innerHTML='<div class="sub">Фокус с прошлой попытки ('+new Date(a[0].date).toLocaleDateString('ru')+')</div><b>'+esc(a[0].recs[0].title)+'</b><div class="sub">💡 '+esc(a[0].recs[0].hack)+'</div>';
+}
+const TREND=[['jump','Высота прыжка, см'],['contactVsApex','Контакт относительно пика, мс'],['handSpeed','Скорость кисти, м/с'],['reach','Высота точки удара, % руки'],['elbowContact','Рука на контакте, °'],['approachSpeed','Скорость разбега, м/с'],['kneeLanding','Амортизация коленями, °']];
+$('trendSel').innerHTML=TREND.map(t=>'<option value="'+t[0]+'">'+t[1]+'</option>').join('');
+$('trendSel').onchange=renderHistory;
+const mv=(s,id)=>{const m=s.metrics.find(x=>x.id===id);return m?m.value:null};
+async function renderHistory(){
+  const a=await dbAll();
+  // график
+  const c=$('trend'),x=c.getContext('2d'),id=$('trendSel').value;
+  x.clearRect(0,0,c.width,c.height);
+  const pts=a.slice().reverse().map(s=>mv(s,id)).filter(v=>v!=null);
+  x.fillStyle='#93a0bd';x.font='20px sans-serif';
+  if(pts.length<2)x.fillText('Нужно минимум 2 сохранённые попытки',20,120);
+  else{
+    const lo=Math.min(...pts),hi=Math.max(...pts),sp=(hi-lo)||1,px=i=>40+i*(c.width-70)/(pts.length-1),py=v=>c.height-30-(v-lo)/sp*(c.height-60);
+    x.fillText(String(hi),4,26);x.fillText(String(lo),4,c.height-22);
+    x.strokeStyle='#ffb020';x.lineWidth=3;x.beginPath();pts.forEach((v,i)=>i?x.lineTo(px(i),py(v)):x.moveTo(px(i),py(v)));x.stroke();
+    x.fillStyle='#ffb020';pts.forEach((v,i)=>{x.beginPath();x.arc(px(i),py(v),5,0,7);x.fill()});
+  }
+  $('sessList').innerHTML=a.length?a.map(s=>'<div class="sess"><input type="checkbox" data-id="'+s.id+'"><img src="'+(s.thumbs.contact||'')+'" alt=""><div style="flex:1" data-open="'+s.id+'"><b>'+new Date(s.date).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</b> <span class="tag">'+esc(s.timing.title)+'</span><div class="sub">'+esc(s.note||s.file||'')+'</div><div class="sub">Прыжок '+(mv(s,'jump')??'—')+' см · кисть '+(mv(s,'handSpeed')??'—')+' м/с</div></div><button class="sm" data-del="'+s.id+'">✕</button></div>').join('')
+    :'<div class="sub">Пока пусто. Сохрани первую попытку во вкладке «Анализ».</div>';
+  $('sessList').querySelectorAll('[data-open]').forEach(e=>e.onclick=()=>detail([a.find(s=>s.id==e.dataset.open)]));
+  $('sessList').querySelectorAll('[data-del]').forEach(e=>e.onclick=async()=>{if(confirm('Удалить попытку?')){await dbDel(+e.dataset.del);renderHistory()}});
+  $('bCompare').onclick=()=>{
+    const ids=[...$('sessList').querySelectorAll('input:checked')].map(i=>+i.dataset.id);
+    if(ids.length!==2)return alert('Отметь галочками ровно две попытки.');
+    detail(ids.map(i=>a.find(s=>s.id===i)).sort((p,q)=>p.id-q.id));
+  };
+  $('bExport').onclick=()=>{
+    const blob=new Blob([JSON.stringify(a.map(s=>({...s,thumbs:undefined})),null,1)],{type:'application/json'});
+    const l=document.createElement('a');l.href=URL.createObjectURL(blob);l.download='spikelab-history.json';l.click();
+  };
+}
+function detail(ss){
+  const d=$('detail');d.classList.remove('hide');
+  const dt=s=>new Date(s.date).toLocaleDateString('ru',{day:'numeric',month:'short'});
+  let h='<h2>'+(ss.length===2?'Сравнение: '+dt(ss[0])+' → '+dt(ss[1]):'Попытка '+dt(ss[0]))+'</h2>';
+  for(const s of ss)h+='<div class="sub">'+dt(s)+': <b>'+esc(s.timing.title)+'</b>. '+esc(s.recs.map(r=>r.title).join('; '))+'</div><div class="thumbs" style="margin:6px 0 10px">'+['takeoff','bow','contact','land'].filter(k=>s.thumbs[k]).map(k=>'<figure><img src="'+s.thumbs[k]+'"><figcaption>'+KEYN.find(q=>q[0]===k)[1]+'</figcaption></figure>').join('')+'</div>';
+  h+='<table><tr><th>Метрика</th>'+ss.map(s=>'<th>'+dt(s)+'</th>').join('')+(ss.length===2?'<th>Δ</th>':'')+'</tr>';
+  const rank={ok:0,info:0,warn:1,bad:2,na:3};
+  for(const m of ss[0].metrics){
+    const v=ss.map(s=>s.metrics.find(x=>x.id===m.id));
+    h+='<tr><td>'+esc(m.name)+'</td>'+v.map(x=>'<td>'+(x?'<span class="dot '+x.status+'"></span>'+(x.txt?esc(x.txt):(x.value==null?'—':x.value+' '+x.unit)):'—')+'</td>').join('');
+    if(ss.length===2){
+      let dl='';
+      if(v[1]&&v[0].value!=null&&v[1].value!=null&&!m.txt){const df=+(v[1].value-v[0].value).toFixed(2);const cls=rank[v[1].status]<rank[v[0].status]?'good':rank[v[1].status]>rank[v[0].status]?'worse':'';dl='<span class="'+cls+'">'+(df>0?'+':'')+df+'</span>'}
+      h+='<td>'+dl+'</td>';
+    }
+    h+='</tr>';
+  }
+  d.innerHTML=h+'</table>';d.scrollIntoView({behavior:'smooth'});
+}
+showFocus();
+</script>
+</body>
+</html>
