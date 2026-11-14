@@ -61,6 +61,8 @@ details summary{cursor:pointer;color:var(--mut)}
 .sess img{width:84px;border-radius:8px}
 .good{color:var(--ok)}.worse{color:var(--bad)}
 ol,ul{padding-left:20px;margin:6px 0}
+.ph{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.ph b{flex:0 0 100px}.ph span{flex:1;font-size:12px;color:var(--mut)}.ph .man{color:var(--acc)}
+#chartLeg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px}
 .tag{font-size:11px;border:1px solid var(--line);border-radius:6px;padding:1px 5px;color:var(--mut)}
 </style>
 </head>
@@ -86,8 +88,8 @@ ol,ul{padding-left:20px;margin:6px 0}
     <div id="videoBox" class="hide" style="margin-top:10px">
       <video id="video" playsinline muted controls preload="auto"></video>
       <div class="row" style="margin-top:8px">
-        <button class="pri" id="btnAuto">Найти удар и разобрать</button>
-        <button id="btnHere">Удар на этом кадре</button>
+        <button class="pri" id="btnAuto">Разобрать удар</button>
+        <button id="btnHere" class="hide">Разобрать с текущего момента видео</button>
         <button id="btnCancel" class="hide">Стоп</button>
       </div>
       <div class="row" style="margin-top:8px">
@@ -95,7 +97,7 @@ ol,ul{padding-left:20px;margin:6px 0}
         <span class="sub" id="pickMsg">Если в кадре несколько человек: останови видео там, где тебя хорошо видно, и нажми.</span>
       </div>
       <canvas id="pick" class="hide" style="width:100%;border-radius:10px;margin-top:8px;display:block"></canvas>
-      <div class="sub" style="margin-top:6px">Если автопоиск ошибся — поставь ползунок видео на момент касания мяча и нажми «Удар на этом кадре»: этот кадр станет контактом.</div>
+      <div class="sub hide" id="hereHint" style="margin-top:6px">В длинном ролике несколько ударов? Перемотай видео на нужный удар и нажми «Разобрать с текущего момента видео» — разбор пойдёт вокруг этого места, а кадр станет контактом.</div>
       <div class="bar hide" id="bar"><i></i></div>
       <div id="status" class="sub" style="margin-top:6px"></div>
     </div>
@@ -109,6 +111,7 @@ ol,ul{padding-left:20px;margin:6px 0}
       <div><label>Видео замедлено</label><select id="sSlow"><option value="1">Нет</option><option value="2">×2</option><option value="4">×4</option><option value="8">×8</option></select></div>
       <div><label>Частота кадров</label><select id="sFps"><option value="auto">Авто</option><option value="30">30</option><option value="60">60</option></select></div>
       <div><label>Модель позы</label><select id="sModel"><option value="full">Точная</option><option value="heavy">Максимальная (медленно)</option><option value="lite">Быстрая</option></select></div>
+      <div><label>Сетка</label><select id="sNet"><option value="243">Мужская 243 см</option><option value="235">Любительская 235 см</option><option value="224">Женская 224 см</option><option value="0">Не учитывать</option></select></div>
       <div><label>Людей в кадре</label><select id="sMulti"><option value="1">Только я</option><option value="3">Несколько</option></select></div>
     </div>
   </details>
@@ -123,20 +126,19 @@ ol,ul{padding-left:20px;margin:6px 0}
           <button class="sm" id="bPlay">▶ 0.25×</button>
           <button class="sm" id="bNext">▶</button>
           <button class="sm" id="bZoom">🔍 Крупно</button>
+          <button class="sm" id="bStrobe">Стробо</button>
+          <button class="sm" id="bGhost">👻 Эталон</button>
         </div>
         <span class="sub" id="frameInfo"></span>
       </div>
-      <div class="chips" id="chips"></div>
-      <div class="sub">Поставить метку на текущем кадре (сразу пересчитает):</div>
-      <div class="row" style="margin-top:4px">
-        <button class="sm" id="bSet">Пас</button>
-        <button class="sm" id="bTake">Отрыв</button>
-        <button class="sm pri" id="bContact">Контакт</button>
-        <button class="sm" id="bLand">Приземление</button>
-        <button class="sm" id="bReset">Сброс меток</button>
-      </div>
+      <canvas id="chart" width="640" height="150" style="width:100%;margin-top:6px;border-radius:8px;background:var(--card2)"></canvas>
+      <div id="chartLeg"></div>
+      <h3>Фазы удара</h3>
+      <div class="sub">«Показать» — перейти к кадру фазы. «Перенести сюда» — назначить фазой тот кадр, который сейчас на экране; всё сразу пересчитается.</div>
+      <div id="phases"></div>
+      <div class="row" style="margin-top:8px"><button class="sm" id="bReset">Сбросить ручные метки</button></div>
       <div id="markMsg" class="sub" style="color:var(--ok);margin-top:6px"></div>
-      <div class="sub" style="margin-top:6px">Отрыв, контакт и приземление находятся автоматически. Чтобы выставить точно: включи «Крупно», стрелками ◀ ▶ дойди до нужного кадра и нажми соответствующую кнопку. «Пас» — кадр, где мяч уходит от рук связующего: тогда появится расчёт, когда отрываться относительно паса. Скелет не на том человеке? Вернись к видео и нажми «Выбрать игрока».</div>
+      <div class="sub" style="margin-top:6px">Чтобы выставить точно: включи «Крупно» и стрелками ◀ ▶ дойди до нужного кадра. «Пас» — кадр, где мяч уходит от рук связующего. Скелет не на том человеке? Вернись к видео и нажми «Выбрать игрока».</div>
     </div>
 
     <div class="card verdict" id="timing"></div>
@@ -239,6 +241,7 @@ const CONFIG = {
     approachSpeed:{ok:[2.6,null],bad:[1.8,null],src:'heur',target:'от 2.6 м/с'},
     accel:        {ok:[1.1,null],bad:[0.9,null],src:'coach',target:'последние шаги быстрее (×1.1+)'},
     stepClose:    {ok:[0.06,0.22],bad:[0.02,0.32],src:'heur',target:'0.06–0.22 с'},
+    overNet:      {ok:[15,null],bad:[0,null],src:'heur',target:'от +15 см над сеткой'},
     kneeTakeoff:  {ok:[95,125],bad:[80,145],src:'heur',target:'95–125°'},
     backswing:    {ok:[45,null],bad:[25,null],src:'heur',target:'от 45° назад'},
     armLift:      {ok:[null,0.08],bad:[null,0.16],src:'heur',target:'до отрыва или сразу после'},
@@ -420,6 +423,37 @@ function analyze(frames,opts){
   const c=userC?opts.contactIdx:autoContact;
   if(bow==null||bow>c)bow=c;
 
+  // ---- физика полёта: центр масс (ЦМ) по сегментам тела и парабола свободного падения
+  const SEG=[[0.028,L.shL,L.elL,0.436],[0.028,L.shR,L.elR,0.436],[0.022,L.elL,L.wrL,0.68],[0.022,L.elR,L.wrR,0.68],[0.1,L.hipL,L.knL,0.433],[0.1,L.hipR,L.knR,0.433],[0.061,L.knL,L.anL,0.6],[0.061,L.knR,L.anR,0.6]];
+  const comX=new Array(n),comY=new Array(n);
+  for(let i=0;i<n;i++){
+    let x=0.081*(X[L.earL][i]+X[L.earR][i])/2+0.497*(shX[i]+hipX[i])/2,y=0.081*(Y[L.earL][i]+Y[L.earR][i])/2+0.497*(shY[i]+hipY[i])/2;
+    for(const [m,a,b,r] of SEG){x+=m*(X[a][i]+(X[b][i]-X[a][i])*r);y+=m*(Y[a][i]+(Y[b][i]-Y[a][i])*r)}
+    comX[i]=x;comY[i]=y;
+  }
+  const phys={good:false};
+  {
+    const ii=[];for(let i=to+1;i<flEnd;i++)ii.push(i);
+    if(ii.length>=5){
+      // МНК: y = a·τ² + b·τ + c0 (в полёте на ЦМ действует только g), x = k·τ + x0
+      let S0=ii.length,S1=0,S2=0,S3=0,S4=0,Y0=0,Y1=0,Y2=0,X0=0,X1=0;
+      for(const i of ii){const u=t[i]-t[to],y=comY[i],u2=u*u;S1+=u;S2+=u2;S3+=u2*u;S4+=u2*u2;Y0+=y;Y1+=y*u;Y2+=y*u2;X0+=comX[i];X1+=comX[i]*u}
+      const det=(a,b,c,d,e,f,g,h,k)=>a*(e*k-f*h)-b*(d*k-f*g)+c*(d*h-e*g);
+      const D=det(S4,S3,S2,S3,S2,S1,S2,S1,S0);
+      if(Math.abs(D)>1e-12){
+        const a=det(Y2,S3,S2,Y1,S2,S1,Y0,S1,S0)/D,b=det(S4,Y2,S2,S3,Y1,S1,S2,Y0,S0)/D,c0=det(S4,S3,Y2,S3,S2,Y1,S2,S1,Y0)/D;
+        let sr=0,st=0;const ym=Y0/S0;
+        for(const i of ii){const u=t[i]-t[to];sr+=(comY[i]-(a*u*u+b*u+c0))**2;st+=(comY[i]-ym)**2}
+        const r2=st>0?1-sr/st:0,uV=-b/(2*a),uTo=dtm/2-(uT==null&&b<0?Math.min(dtm,cfg.groundTol*H/-b):0),kx=(S0*X1-S1*X0)/(S0*S2-S1*S1);
+        phys.r2=r2;
+        if(a>0&&r2>0.9&&uV>uTo+0.05&&uV<t[flEnd]-t[to]){
+          phys.good=true;phys.apexT=t[to]+uV;phys.tUp=uV-uTo;
+          phys.ratio=(2*a/9.81)/(H/hM);phys.vx=dir*kx/H*hM;
+        }
+      }
+    }
+  }
+  const apexT=phys.good?phys.apexT:t[apex];
   const M=[],mm={};
   const add=(id,phase,name,value,unit,dig,conf,how,txt)=>{
     const th=T[id];const st=th?statusOf(value,th):(value==null?'na':'info');
@@ -473,11 +507,15 @@ function analyze(frames,opts){
   }
   // ---- Прыжок
   {
-    const jh=rise/H*hCm;
-    let fl=null;if(land!=null){const Tf=t[land]-t[to];fl=981*Tf*Tf/8}
-    let cf=confOf(hips,flight);
-    if(fl!=null&&Math.abs(fl-jh)/Math.max(jh,1)>0.35&&cf==='high')cf='mid';
-    add('jump','Прыжок','Высота прыжка',jh,'см',0,cf,'Подъём таза от отрыва до пика, в пересчёте на твой рост'+(fl!=null?'. По времени полёта: '+fl.toFixed(0)+' см':''));
+    let cf=confOf(hips,flight),jh,how;
+    if(phys.good){jh=981*phys.tUp*phys.tUp/2;how='По физике полёта: h = g·t²/2, где t — время от отрыва до вершины параболы центра масс. Не зависит от масштаба и роста';if(phys.r2<0.97&&cf==='high')cf='mid'}
+    else{jh=rise/H*hCm;how='Подъём таза от отрыва до пика в пересчёте на рост (параболу полёта построить не удалось)';if(cf==='high')cf='mid'}
+    add('jump','Прыжок','Высота прыжка',jh,'см',0,cf,how);
+    if(phys.good){
+      const vy=9.81*phys.tUp;
+      add('vTake','Прыжок','Вертикальная скорость отрыва',vy,'м/с',2,cf,'g × время подъёма до вершины');
+      add('takeAngle','Прыжок','Угол вылета',Math.atan2(vy,Math.max(0.01,phys.vx))*180/Math.PI,'°',0,cf,'Направление скорости центра масс при отрыве: 90° — строго вверх, меньше — летишь вперёд');
+    }
     const dr=land!=null?dir*(hipX[land]-hipX[to])/H*hCm:null;
     add('drift','Прыжок','Пролёт вперёд',dr,'см',0,cf,'Смещение таза по горизонтали от отрыва до приземления');
   }
@@ -497,6 +535,10 @@ function analyze(frames,opts){
     add('reach','Контакт','Высота точки удара',(Y[S][c]-Y[W][c])/armLen*100,'% руки',0,cf,'Высота кисти над плечом в долях длины руки: 100% — рука вертикально вверх');
     add('front','Контакт','Мяч перед плечом',dir*(X[W][c]-X[S][c])/H*100,'% роста',0,cf,'Положение кисти относительно бьющего плеча по ходу движения (минус — за головой)');
     const ii=rng(t[c]-0.08,t[c]+dtm*1.01);
+    add('contactH','Контакт','Высота удара над полом',(G-Y[W][c])/H*hCm+9,'см',0,cf,'Высота кисти над полом в точке отталкивания, +9 см до центра ладони');
+    if(opts.netCm)add('overNet','Контакт','Удар выше сетки на',mm.contactH.value-opts.netCm,'см',0,cf,'Высота удара минус высота сетки '+opts.netCm+' см');
+    {const ea=X[0].map((q,i)=>ang(S,E,W,i)),we=deriv(ea,t),jj=rng(t[c]-0.15,t[c]+dtm*1.01);
+     add('elbowW','Контакт','Скорость разгибания локтя',Math.max(...jj.map(i=>we[i])),'°/с',0,cf,'Пиковая угловая скорость разгибания локтя за 0.15 с до контакта');}
     add('handSpeed','Контакт','Скорость кисти',Math.max(...ii.map(i=>spW[i]))/H*hM,'м/с',1,cf,'Макс. скорость кисти за 0.08 с до контакта');
     // кинетическая цепь по угловым скоростям сегментов
     const unwrap=a=>{const o=a.slice();for(let i=1;i<o.length;i++){let d=o[i]-o[i-1];while(d>Math.PI){o[i]-=2*Math.PI;d-=2*Math.PI}while(d<-Math.PI){o[i]+=2*Math.PI;d+=2*Math.PI}}return o};
@@ -513,12 +555,12 @@ function analyze(frames,opts){
   // ---- Тайминг
   {
     const cf=userC?'high':'mid';
-    add('contactVsApex','Тайминг','Контакт относительно пика',(t[c]-t[apex])*1000,'мс',0,cf,'Минус — удар на взлёте (опаздываешь), плюс — на спуске (прыгнул рано)'+(userC?'':'. Контакт определён автоматически — проверь метку'));
-    add('heightLost','Тайминг','Потеря высоты к контакту',Math.max(0,(hipY[c]-hipY[apex])/rise*100),'%',0,cf,'На сколько таз ниже пика прыжка в момент контакта');
+    add('contactVsApex','Тайминг','Контакт относительно пика',(t[c]-apexT)*1000,'мс',0,cf,'Минус — удар на взлёте (опаздываешь), плюс — на спуске (прыгнул рано)'+(userC?'':'. Контакт определён автоматически — проверь метку'));
+    add('heightLost','Тайминг','Потеря высоты к контакту',phys.good?Math.min(100,((t[c]-apexT)/phys.tUp)**2*100):Math.max(0,(hipY[c]-hipY[apex])/rise*100),'%',0,cf,'На сколько таз ниже пика прыжка в момент контакта');
     add('hang','Тайминг','Отрыв → контакт',t[c]-t[to],'с',2,cf,'Время от отрыва до контакта');
     if(setI!=null){
       add('setToTakeoff','Тайминг','Пас → отрыв',t[to]-t[setI],'с',2,'high','Время от ухода мяча с рук связующего до твоего отрыва');
-      add('idealSet','Тайминг','Нужно было: пас → отрыв',Math.max(0,(t[to]-t[setI])+(t[c]-t[apex])),'с',2,cf,'Через сколько после паса надо было оторваться, чтобы встретить этот мяч в пике прыжка');
+      add('idealSet','Тайминг','Нужно было: пас → отрыв',Math.max(0,(t[to]-t[setI])+(t[c]-apexT)),'с',2,cf,'Через сколько после паса надо было оторваться, чтобы встретить этот мяч в пике прыжка');
       add('setToContact','Тайминг','Пас → контакт',t[c]-t[setI],'с',2,'high','Полное время полёта паса до удара');
     }
   }
@@ -533,6 +575,10 @@ function analyze(frames,opts){
     }
     const ii=land!=null?rng(t[land],t[land]+0.3):[];
     add('landAsym','Приземление','Две ноги одновременно',asym,'мс',0,confOf([L.anL,L.anR],ii),'Разница во времени касания пола левой и правой стопой');
+    if(land!=null&&phys.good&&t[n-1]>=t[land]+0.15){
+      const jj=rng(t[land],t[land]+0.4),d=(Math.max(...jj.map(i=>comY[i]))-comY[land])/H*hM,v=9.81*Math.max(0,t[land]-apexT);
+      if(d>0.03)add('landG','Приземление','Средняя перегрузка при приземлении',v*v/(2*9.81*d)+1,'g',1,'mid','Скорость приземления² ÷ (2 × путь торможения центра масс) + 1g. Чем глубже и дольше амортизация, тем меньше');
+    }
     add('kneeLanding','Приземление','Амортизация коленями',kl,'°',0,confOf(legs,ii),'Минимальный угол в коленях за 0.35 с после приземления');
   }
 
@@ -555,7 +601,11 @@ function analyze(frames,opts){
   if(mm.front.status!=='ok'&&mm.front.value!=null&&mm.front.value<T.front.ok[0])sig.push('Мяч оказывается над головой или за ней — ты забегаешь под мяч.');
   timing.signals=sig;
 
-  return {ok:true,ignored,n,t,X,Y,H,dir,hand,G,dtm,keys:{takeoff:to,apex,bow,contact:c,land,autoContact,set:setI},userContact:userC,metrics:M,m:mm,timing,recs:recommend(mm,timing),good:M.filter(x=>x.status==='ok'&&x.conf!=='low').map(x=>x.name)};
+  const notes=[];
+  if(phys.good&&(phys.ratio<0.7||phys.ratio>1.4))notes.push('Масштаб по росту и по физике полёта расходится в '+phys.ratio.toFixed(2)+' раза'+(phys.ratio<0.45?': похоже, видео замедлено — укажи это в настройках.':': проверь рост в настройках и что камера стоит сбоку. Скорости в м/с и высоты в см могут быть неточными.'));
+  if(!phys.good)notes.push('Параболу полёта построить не удалось (мало кадров в воздухе или шумные точки) — высота прыжка и пик оценены грубее.');
+  const series={comH:comY.map(y=>(G-y)/H*hCm),hand:spW.map(v=>v/H*hM),elbow:comY.map((q,i)=>ang(S,E,W,i)),knee:comY.map((q,i)=>kneeAt(i))};
+  return {ok:true,ignored,notes,series,comX,comY,phys,n,t,X,Y,H,dir,hand,G,dtm,keys:{takeoff:to,apex,bow,contact:c,land,autoContact,set:setI},userContact:userC,metrics:M,m:mm,timing,recs:recommend(mm,timing),good:M.filter(x=>x.status==='ok'&&x.conf!=='low').map(x=>x.name)};
 }
 
 // Правила: метрика вне зоны → диагноз → подсказка‑хак → упражнения. pri — важность.
@@ -620,14 +670,14 @@ const S={frames:null,res:null,idx:0,marks:NOMARK(),zoom:false,busy:false,cancel:
 let ts=0,lmk=null,lmkKey='';
 
 // ---------- настройки
-const SET_KEYS=['sHeight','sHand','sSlow','sFps','sModel','sMulti'];
+const SET_KEYS=['sHeight','sHand','sSlow','sFps','sModel','sMulti','sNet'];
 try{const s=JSON.parse(localStorage.getItem('spikelab.set')||'{}');for(const k of SET_KEYS)if(s[k]!=null)$(k).value=s[k]}catch(e){}
 for(const k of SET_KEYS)$(k).addEventListener('change',()=>{
   const o={};for(const q of SET_KEYS)o[q]=$(q).value;
   try{localStorage.setItem('spikelab.set',JSON.stringify(o))}catch(e){}
-  if((k==='sHeight'||k==='sHand')&&S.frames)compute();
+  if((k==='sHeight'||k==='sHand'||k==='sNet')&&S.frames)compute();
 });
-const opt=()=>({heightCm:+$('sHeight').value||180,hand:$('sHand').value,slow:+$('sSlow').value||1});
+const opt=()=>({netCm:+$('sNet').value||0,heightCm:+$('sHeight').value||180,hand:$('sHand').value,slow:+$('sSlow').value||1});
 
 // ---------- вкладки
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
@@ -648,7 +698,8 @@ $('file').onchange=async e=>{
   await new Promise(r=>{video.onloadedmetadata=r;video.onerror=r});
   if(!video.duration){setStatus('Не удалось открыть видео. Попробуй другой файл (MP4/MOV).');return}
   try{await video.play();video.pause()}catch(err){}
-  setStatus('Длина '+video.duration.toFixed(1)+' с, '+video.videoWidth+'×'+video.videoHeight+'. Нажми «Найти удар и разобрать».');
+  const long=video.duration>4;$('btnHere').classList.toggle('hide',!long);$('hereHint').classList.toggle('hide',!long);
+  setStatus('Длина '+video.duration.toFixed(1)+' с, '+video.videoWidth+'×'+video.videoHeight+'. Нажми «Разобрать удар».');
 };
 function setStatus(s){$('status').textContent=s}
 function setBar(p){$('bar').classList.toggle('hide',p==null);if(p!=null)$('bar').firstElementChild.style.width=Math.round(p*100)+'%'}
@@ -784,7 +835,7 @@ async function run(center){
     let cv=center,seed=S.pick;
     const seedAt=(co,tv)=>{let b=null;for(const f of co)if(f.lm&&(!b||Math.abs(f.tv-tv)<Math.abs(b.tv-tv)))b=f;return b?{tv:b.tv,...cen(b.lm)}:null};
     if(cv==null){
-      if(dur/slow>CONFIG.maxAutoSec){setStatus('Ролик длиннее '+CONFIG.maxAutoSec+' с. Поставь ползунок на момент удара и нажми «Удар на этом кадре».');busy(false);return}
+      if(dur/slow>CONFIG.maxAutoSec){setStatus('Ролик длиннее '+CONFIG.maxAutoSec+' с. Перемотай видео на нужный удар и нажми «Разобрать с текущего момента видео».');busy(false);return}
       if(dur/slow>CONFIG.windowBefore+CONFIG.windowAfter+0.5){
         const co=await grab(0,dur,CONFIG.coarseStep*slow,false,'Ищу прыжок…');
         associate(co,seed);
@@ -858,7 +909,7 @@ pickC.onclick=e=>{
   let bi=0,bd=1e9;
   c.poses.forEach((p,i)=>{const b=box(p),inside=pt.x>=b.x0&&pt.x<=b.x1&&pt.y>=b.y0&&pt.y<=b.y1;const d=d2({x:(b.x0+b.x1)/2,y:(b.y0+b.y1)/2},pt)-(inside?1e4:0);if(d<bd){bd=d;bi=i}});
   S.pick={tv:c.tv,...cen(c.poses[bi])};drawPick(bi);
-  $('pickMsg').textContent='Игрок №'+(bi+1)+' выбран ✓ Теперь «Найти удар и разобрать» — или поставь видео на момент удара и «Удар на этом кадре».';
+  $('pickMsg').textContent='Игрок №'+(bi+1)+' выбран ✓ Теперь нажми «Разобрать удар».';
 };
 $('btnAuto').onclick=()=>run(null);
 $('btnHere').onclick=()=>run(video.currentTime);
@@ -866,7 +917,7 @@ $('btnHere').onclick=()=>run(video.currentTime);
 // ---------- расчёт и вывод
 function compute(jump){
   const o=opt();
-  const r=analyze(S.frames,{heightCm:o.heightCm,hand:o.hand,contactIdx:S.marks.contact,setIdx:S.marks.set,takeoffIdx:S.marks.takeoff,landIdx:S.marks.land});
+  const r=analyze(S.frames,{netCm:o.netCm,heightCm:o.heightCm,hand:o.hand,contactIdx:S.marks.contact,setIdx:S.marks.set,takeoffIdx:S.marks.takeoff,landIdx:S.marks.land});
   S.res=r;
   if(!r.ok){$('results').classList.add('hide');setStatus(r.error);return}
   $('results').classList.remove('hide');
@@ -881,13 +932,19 @@ const ST={ok:'в норме',warn:'поправить',bad:'проблема',in
 function fmtVal(m){if(m.txt)return esc(m.txt);if(m.value==null)return '—';return m.value+(m.unit?' '+m.unit:'')}
 function renderAll(){
   const r=S.res;
-  $('chips').innerHTML=KEYN.filter(k=>r.keys[k[0]]!=null).map(k=>'<button class="sm" data-i="'+r.keys[k[0]]+'">'+k[1]+'</button>').join('');
-  $('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>show(+b.dataset.i));
+  const PH=[['set','Пас',1],['takeoff','Отрыв',1],['bow','Замах',0],['apex','Пик прыжка',0],['contact','Контакт',1],['land','Приземление',1]];
+  $('phases').innerHTML=PH.map(([k,nm,can])=>{
+    const i=r.keys[k],man=can&&S.marks[k]!=null&&S.marks[k]===i;
+    return '<div class="ph"><b>'+nm+'</b><span'+(man?' class="man"':'')+'>'+(i==null?'не задан':'кадр '+(i+1)+(can?(man?' · вручную ✎':' · авто'):''))+'</span>'+(i!=null?'<button class="sm" data-go="'+i+'">Показать</button>':'')+(can?'<button class="sm" data-mark="'+k+'">Перенести сюда</button>':'')+'</div>';
+  }).join('');
+  $('phases').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{stopPlay();show(+b.dataset.go)});
+  $('phases').querySelectorAll('[data-mark]').forEach(b=>b.onclick=()=>mark(b.dataset.mark));
   const tm=r.timing;
   $('timing').className='card verdict '+tm.verdict;
   $('timing').innerHTML='<div class="sub">Тайминг</div><b class="big">'+esc(tm.title)+'</b><div>'+esc(tm.text)+'</div>'+
     tm.signals.map(s=>'<div class="sub">• '+esc(s)+'</div>').join('')+
-    (tm.auto?'<div class="sub" style="color:var(--warn);margin-top:6px">Контакт определён автоматически. Проверь кадр и нажми «Контакт» — тогда оценка тайминга будет точной.</div>':'');
+    r.notes.map(x=>'<div class="sub" style="color:var(--warn);margin-top:6px">⚠ '+esc(x)+'</div>').join('')+
+    (tm.auto?'<div class="sub" style="color:var(--warn);margin-top:6px">Контакт определён автоматически. Проверь кадр: дойди до касания мяча и в строке «Контакт» нажми «Перенести сюда» — тогда оценка тайминга будет точной.</div>':'');
   $('recs').innerHTML=r.recs.length?r.recs.map((x,i)=>'<div class="card rec s'+Math.round(x.sev)+'"><b>'+(i+1)+'. '+esc(x.title)+'</b><div class="sub">'+esc(x.why)+'</div><div class="hack">💡 '+esc(x.hack)+'</div><div class="sub">Упражнения:</div><ul>'+x.drills.map(d=>'<li>'+esc(d)+'</li>').join('')+'</ul></div>').join('')
     :'<div class="card">Явных ошибок не найдено. Работай над высотой прыжка и скоростью кисти — следи за ними в «Истории».</div>';
   $('goodCard').innerHTML='<b class="good">Что уже хорошо</b><div class="sub">'+(r.good.length?esc(r.good.join(' · ')):'пока нечего отметить — начни с первой правки')+'</div>';
@@ -922,7 +979,57 @@ function drawOverlay(ctx,i,scale,lw){
   }
   ctx.fillStyle='#fff';
   for(const j of [11,12,13,14,15,16,23,24,25,26,27,28]){const [x,y]=P(j);ctx.beginPath();ctx.arc(x,y,3*w,0,7);ctx.fill()}
+  // траектория центра масс в полёте
+  const a0=r.keys.takeoff,a1=r.keys.land!=null?r.keys.land:r.n-1;
+  ctx.strokeStyle='rgba(62,207,142,.9)';ctx.lineWidth=2*w;ctx.beginPath();
+  for(let q=a0;q<=a1;q++){q===a0?ctx.moveTo(r.comX[q]*k,r.comY[q]*k):ctx.lineTo(r.comX[q]*k,r.comY[q]*k)}ctx.stroke();
+  ctx.fillStyle='#3ecf8e';ctx.beginPath();ctx.arc(r.comX[i]*k,r.comY[i]*k,4*w,0,7);ctx.fill();
+  // углы
+  ctx.font='bold '+Math.round(13*w)+'px sans-serif';ctx.fillStyle='#fff';ctx.strokeStyle='rgba(0,0,0,.7)';ctx.lineWidth=3*w;
+  const txt=(s,j)=>{const [x,y]=P(j);ctx.strokeText(s,x+6*w,y-6*w);ctx.fillText(s,x+6*w,y-6*w)};
+  txt(Math.round(r.series.elbow[i])+'°',hs[1]);txt(Math.round(r.series.knee[i])+'°',25);
+  // стробоскоп: позы ключевых фаз на одном кадре
+  if(S.strobe){
+    ctx.lineWidth=2*w;ctx.strokeStyle='rgba(255,255,255,.55)';
+    for(const q of [r.keys.takeoff,r.keys.bow,r.keys.contact,r.keys.land])if(q!=null&&q!==i)for(const [a,b] of BONES){ctx.beginPath();ctx.moveTo(r.X[a][q]*k,r.Y[a][q]*k);ctx.lineTo(r.X[b][q]*k,r.Y[b][q]*k);ctx.stroke()}
+  }
+  // призрак эталонной попытки, совмещённый по точке отрыва и моменту контакта
+  if(S.ghost&&S.ref){
+    const g=S.ref,tau=r.t[i]-r.t[r.keys.contact];let bi=0;
+    for(let q=1;q<g.tc.length;q++)if(Math.abs(g.tc[q]-tau)<Math.abs(g.tc[bi]-tau))bi=q;
+    if(Math.abs(g.tc[bi]-tau)<0.06){
+      const ax=(r.X[23][a0]+r.X[24][a0])/2,pt=j=>{const q=GJ.indexOf(j);return [(ax+g.p[bi][2*q]*r.dir*r.H)*k,(r.G+g.p[bi][2*q+1]*r.H)*k]};
+      ctx.strokeStyle='rgba(255,93,255,.85)';ctx.lineWidth=2.5*w;ctx.setLineDash([6*w,4*w]);
+      for(const [a,b] of BONES)if(GJ.includes(a)&&GJ.includes(b)){ctx.beginPath();ctx.moveTo(...pt(a));ctx.lineTo(...pt(b));ctx.stroke()}
+      ctx.setLineDash([]);
+    }
+  }
 }
+const GJ=[11,12,13,14,15,16,23,24,25,26,27,28];
+function seqOf(r){
+  const a0=r.keys.takeoff,ax=(r.X[23][a0]+r.X[24][a0])/2,tc=[],p=[],tC=r.t[r.keys.contact];
+  for(let i=0;i<r.n;i++){
+    if(r.t[i]<r.t[a0]-0.9||r.t[i]>tC+0.8)continue;
+    tc.push(+(r.t[i]-tC).toFixed(3));
+    const row=[];for(const j of GJ)row.push(+((r.X[j][i]-ax)*r.dir/r.H).toFixed(3),+((r.Y[j][i]-r.G)/r.H).toFixed(3));
+    p.push(row);
+  }
+  return {tc,p};
+}
+const CH=[['comH','#3ecf8e','центр масс','см',0],['hand','#ffb020','кисть','м/с',1],['elbow','#6aa9ff','локоть','°',0]];
+function drawChart(i){
+  const r=S.res,c=$('chart'),x=c.getContext('2d'),W=c.width,Hh=c.height,px=q=>4+q*(W-8)/(r.n-1);
+  x.clearRect(0,0,W,Hh);
+  x.font='11px sans-serif';
+  for(const [kk,nm] of [['takeoff','отрыв'],['contact','контакт'],['land','призем.'],['set','пас']]){const q=r.keys[kk];if(q==null)continue;x.strokeStyle='rgba(255,255,255,.25)';x.lineWidth=1;x.beginPath();x.moveTo(px(q),0);x.lineTo(px(q),Hh);x.stroke();x.fillStyle='#93a0bd';x.fillText(nm,px(q)+3,11)}
+  for(const [key,col] of CH){
+    const a=r.series[key],lo=Math.min(...a),hi2=Math.max(...a),sp=(hi2-lo)||1;
+    x.strokeStyle=col;x.lineWidth=2;x.beginPath();a.forEach((v,q)=>{const y=Hh-8-(v-lo)/sp*(Hh-26);q?x.lineTo(px(q),y):x.moveTo(px(q),y)});x.stroke();
+  }
+  x.strokeStyle='#fff';x.lineWidth=1.5;x.beginPath();x.moveTo(px(i),0);x.lineTo(px(i),Hh);x.stroke();
+  $('chartLeg').innerHTML=CH.map(([key,col,nm,u,d])=>'<span style="color:'+col+'">● '+nm+': <b>'+r.series[key][i].toFixed(d)+'</b> '+u+'</span>').join('');
+}
+$('chart').onclick=e=>{if(!S.res||!S.res.ok)return;const b=$('chart').getBoundingClientRect();stopPlay();show(Math.round((e.clientX-b.left)/b.width*(S.res.n-1)))};
 function drawLabel(ctx,i,k){
   const r=S.res,lab=KEYN.filter(q=>r.keys[q[0]]===i).map(q=>q[1]+(S.marks[q[0]]===i?' ✎':'')).join(' · ');
   if(lab){ctx.font='bold '+Math.round(18*k)+'px sans-serif';ctx.fillStyle='rgba(0,0,0,.6)';const w=ctx.measureText(lab).width;ctx.fillRect(6*k,6*k,w+12*k,26*k);ctx.fillStyle='#ffb020';ctx.fillText(lab,12*k,25*k)}
@@ -943,9 +1050,12 @@ async function show(i){
   vctx.drawImage(b,0,0,view.width,view.height);
   drawOverlay(vctx,i,kv,Math.max(1,view.width/640)/z);
   vctx.setTransform(1,0,0,1,0,0);drawLabel(vctx,i,view.width/640);
+  drawChart(i);
   const dc=((r.t[i]-r.t[r.keys.contact])*1000).toFixed(0);
   $('frameInfo').textContent='кадр '+(i+1)+'/'+r.n+' · '+(dc>0?'+':'')+dc+' мс от контакта';
 }
+$('bStrobe').onclick=()=>{S.strobe=!S.strobe;$('bStrobe').classList.toggle('pri',S.strobe);show(S.idx)};
+$('bGhost').onclick=()=>{if(!S.ref){$('markMsg').style.color='var(--warn)';$('markMsg').textContent='Эталона пока нет: сохрани удачную попытку и во вкладке «История» нажми на ней ★.';return}S.ghost=!S.ghost;$('bGhost').classList.toggle('pri',S.ghost);show(S.idx)};
 $('bZoom').onclick=()=>{S.zoom=!S.zoom;$('bZoom').classList.toggle('pri',S.zoom);show(S.idx)};
 $('scrub').oninput=e=>{stopPlay();show(+e.target.value)};
 $('bPrev').onclick=()=>{stopPlay();show(S.idx-1)};
@@ -973,10 +1083,6 @@ function mark(kind){
   m.textContent=kind==='reset'?'Метки сброшены, всё снова определяется автоматически.':'✓ Пересчитано: '+MN[kind]+' — кадр '+(i+1)+'.';
   show(i);
 }
-$('bContact').onclick=()=>mark('contact');
-$('bTake').onclick=()=>mark('takeoff');
-$('bLand').onclick=()=>mark('land');
-$('bSet').onclick=()=>mark('set');
 $('bReset').onclick=()=>mark('reset');
 
 // ---------- история (IndexedDB)
@@ -992,7 +1098,7 @@ async function thumb(i){
 $('bSave').onclick=async()=>{
   const r=S.res;if(!r||!r.ok)return;
   const th={};for(const [k,n] of KEYN)if(k!=='set'&&k!=='apex'&&r.keys[k]!=null)th[k]=await thumb(r.keys[k]);
-  const o={id:Date.now(),date:new Date().toISOString(),note:$('note').value.trim(),file:S.file,hand:r.hand,
+  const o={id:Date.now(),seq:seqOf(r),date:new Date().toISOString(),note:$('note').value.trim(),file:S.file,hand:r.hand,
     metrics:r.metrics.map(m=>({id:m.id,name:m.name,value:m.value,unit:m.unit,status:m.status,txt:m.txt,conf:m.conf})),
     timing:{verdict:r.timing.verdict,title:r.timing.title,text:r.timing.text,auto:r.timing.auto},
     recs:r.recs.map(x=>({id:x.id,title:x.title,hack:x.hack})),thumbs:th};
@@ -1031,9 +1137,10 @@ async function renderHistory(){
     x.strokeStyle='#ffb020';x.lineWidth=3;x.beginPath();pts.forEach((v,i)=>i?x.lineTo(px(i),py(v)):x.moveTo(px(i),py(v)));x.stroke();
     x.fillStyle='#ffb020';pts.forEach((v,i)=>{x.beginPath();x.arc(px(i),py(v),5,0,7);x.fill()});
   }
-  $('sessList').innerHTML=a.length?a.map(s=>'<div class="sess"><input type="checkbox" data-id="'+s.id+'"><img src="'+(s.thumbs.contact||'')+'" alt=""><div style="flex:1" data-open="'+s.id+'"><b>'+new Date(s.date).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</b> <span class="tag">'+esc(s.timing.title)+'</span><div class="sub">'+esc(s.note||s.file||'')+'</div><div class="sub">Прыжок '+(mv(s,'jump')??'—')+' см · кисть '+(mv(s,'handSpeed')??'—')+' м/с</div></div><button class="sm" data-del="'+s.id+'">✕</button></div>').join('')
+  $('sessList').innerHTML=a.length?a.map(s=>'<div class="sess"><input type="checkbox" data-id="'+s.id+'"><img src="'+(s.thumbs.contact||'')+'" alt=""><div style="flex:1" data-open="'+s.id+'"><b>'+new Date(s.date).toLocaleString('ru',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</b> <span class="tag">'+esc(s.timing.title)+'</span><div class="sub">'+esc(s.note||s.file||'')+'</div><div class="sub">Прыжок '+(mv(s,'jump')??'—')+' см · кисть '+(mv(s,'handSpeed')??'—')+' м/с</div></div><button class="sm'+(refId()==s.id?' pri':'')+'" data-ref="'+s.id+'" title="Эталон">★</button><button class="sm" data-del="'+s.id+'">✕</button></div>').join('')
     :'<div class="sub">Пока пусто. Сохрани первую попытку во вкладке «Анализ».</div>';
   $('sessList').querySelectorAll('[data-open]').forEach(e=>e.onclick=()=>detail([a.find(s=>s.id==e.dataset.open)]));
+  $('sessList').querySelectorAll('[data-ref]').forEach(e=>e.onclick=()=>{const id=+e.dataset.ref;try{localStorage.setItem('spikelab.ref',refId()==id?'':String(id))}catch(err){}loadRef();renderHistory()});
   $('sessList').querySelectorAll('[data-del]').forEach(e=>e.onclick=async()=>{if(confirm('Удалить попытку?')){await dbDel(+e.dataset.del);renderHistory()}});
   $('bCompare').onclick=()=>{
     const ids=[...$('sessList').querySelectorAll('input:checked')].map(i=>+i.dataset.id);
@@ -1041,7 +1148,7 @@ async function renderHistory(){
     detail(ids.map(i=>a.find(s=>s.id===i)).sort((p,q)=>p.id-q.id));
   };
   $('bExport').onclick=()=>{
-    const blob=new Blob([JSON.stringify(a.map(s=>({...s,thumbs:undefined})),null,1)],{type:'application/json'});
+    const blob=new Blob([JSON.stringify(a.map(s=>({...s,thumbs:undefined,seq:undefined})),null,1)],{type:'application/json'});
     const l=document.createElement('a');l.href=URL.createObjectURL(blob);l.download='spikelab-history.json';l.click();
   };
 }
@@ -1064,6 +1171,9 @@ function detail(ss){
   }
   d.innerHTML=h+'</table>';d.scrollIntoView({behavior:'smooth'});
 }
+function refId(){try{return +localStorage.getItem('spikelab.ref')||0}catch(e){return 0}}
+async function loadRef(){const id=refId(),a=id?await dbAll():[],s=a.find(q=>q.id===id);S.ref=s&&s.seq?s.seq:null;if(!S.ref){S.ghost=false;$('bGhost').classList.remove('pri')}}
+loadRef();
 showFocus();
 </script>
 </body>
