@@ -108,7 +108,10 @@ td b{font-family:var(--hd);font-weight:600;font-size:18px;letter-spacing:.01em}
 .ph{padding:9px 0}.ph b{font-family:var(--hd);font-weight:600;letter-spacing:.05em;text-transform:uppercase;font-size:13px}
 details.card>summary{font-family:var(--hd);font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:15px;color:var(--tx)}
 .sess img{border-radius:10px}
-body{background:radial-gradient(90% 34% at 100% 0,rgba(255,122,26,.16),transparent 70%) no-repeat,var(--bg)}
+body{background:var(--bg)}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(118deg,transparent 0 57%,rgba(255,122,26,.07) 57% 57.6%,transparent 57.6% 61%,rgba(255,122,26,.045) 61% 66%,transparent 66%),radial-gradient(80% 42% at 92% 12%,rgba(255,122,26,.2),transparent 70%),radial-gradient(70% 40% at 0 100%,rgba(122,167,255,.09),transparent 70%),url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 800' preserveAspectRatio='xMidYMid slice'><defs><pattern id='n' width='14' height='14' patternUnits='userSpaceOnUse'><path d='M14 0H0V14' fill='none' stroke='%23fff' stroke-opacity='.07'/></pattern><linearGradient id='f' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23fff' stop-opacity='0'/><stop offset='.5' stop-color='%23fff' stop-opacity='1'/><stop offset='1' stop-color='%23fff' stop-opacity='.25'/></linearGradient><mask id='m'><rect width='400' height='800' fill='url(%23f)'/></mask></defs><g mask='url(%23m)'><g fill='none' stroke='%23fff' stroke-opacity='.075' stroke-width='1.6'><path d='M-90 800 118 455h164L490 800'/><path d='M62 548h276M-8 664h416M200 455V800'/></g><rect x='70' y='352' width='260' height='70' fill='url(%23n)'/><g stroke='%23fff' stroke-opacity='.13' stroke-width='2.4' fill='none'><path d='M70 352h260M70 422h260'/><path d='M70 340V470M330 340V470' stroke-width='3.2'/></g></g><g fill='none' stroke='%23ff7a1a' stroke-linecap='round'><path d='M22 372Q150 92 300 150' stroke-opacity='.3' stroke-width='2.4' stroke-dasharray='2 11'/><circle cx='318' cy='158' r='74' stroke-opacity='.3' stroke-width='2.4'/><path d='M256 118q62 6 96 104M272 220q10-76 96-116M300 87q46 30 90 92' stroke-opacity='.2' stroke-width='2'/></g></svg>") center/cover no-repeat}
+.card{background:rgba(20,20,23,.84);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+header .sub,#modeHint{text-shadow:0 1px 8px #000}
 input[type=range]{accent-color:var(--acc)}
 .ph{display:grid;grid-template-columns:1fr auto auto;column-gap:8px;align-items:center}
 .ph b{grid-column:1;grid-row:1;flex:none}.ph span{grid-column:1;grid-row:2;flex:none}
@@ -315,7 +318,7 @@ input[type=range]{accent-color:var(--acc)}
 // Все настраиваемые пороги. src: 'coach' — распространённый тренерский ориентир,
 // 'heur' — эвристика автора, подбирается под себя. ok — зелёная зона [min,max],
 // bad — за этими границами красная зона; между ними жёлтая. null = без границы.
-const APP_VERSION='2.1.0 · 14.11.2026';
+const APP_VERSION='2.1.1 · 14.11.2026';
 const CONFIG = {
   hiSide: 1280,          // размер сохраняемых кадров (для показа и уточнения точек)
   cropPx: 512,           // размер увеличенного фрагмента вокруг игрока для второго прохода
