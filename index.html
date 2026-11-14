@@ -226,7 +226,7 @@ ol,ul{padding-left:20px;margin:6px 0}
 // Все настраиваемые пороги. src: 'coach' — распространённый тренерский ориентир,
 // 'heur' — эвристика автора, подбирается под себя. ok — зелёная зона [min,max],
 // bad — за этими границами красная зона; между ними жёлтая. null = без границы.
-const APP_VERSION='1.5.0 · 14.11.2026';
+const APP_VERSION='1.6.0 · 14.11.2026';
 const CONFIG = {
   hiSide: 1280,          // размер сохраняемых кадров (для показа и уточнения точек)
   cropPx: 512,           // размер увеличенного фрагмента вокруг игрока для второго прохода
@@ -305,7 +305,7 @@ function cleanFrames(frames){
   const mid=(l,a,b)=>({x:(l[a].x+l[b].x)/2,y:(l[a].y+l[b].y)/2});
   const tor=l=>D(mid(l,11,12),mid(l,23,24)),leg=l=>(D(l[23],l[25])+D(l[25],l[27])+D(l[24],l[26])+D(l[26],l[28]))/2;
   const ok0=fr.filter(f=>f.lm),mt=median(ok0.map(f=>tor(f.lm))),ml=median(ok0.map(f=>leg(f.lm)));
-  for(const f of fr)if(f.lm){const a=tor(f.lm)/mt,b=leg(f.lm)/ml;if(a<0.5||a>1.7||b<0.5||b>1.7){f.lm=null;f.rej=true}}
+  for(const f of fr)if(f.lm){const a=tor(f.lm)/mt,b=leg(f.lm)/ml;const up=mid(f.lm,23,24).y-mid(f.lm,11,12).y;if(a<0.5||a>1.7||b<0.5||b>1.7||up<0.3*mt){f.lm=null;f.rej=true}}
   const groups=[[[13,14],[15,16]],[[25,26],[27,28],[29,30],[31,32]]];
   let prev=null;
   for(const f of fr){
@@ -317,6 +317,28 @@ function cleanFrames(frames){
     }
     prev=f.lm;
   }
+  // Кость не может быть длиннее самой себя: в 2D сегмент бывает только короче (ракурс), но не длиннее.
+  // Если плечо/предплечье/бедро/голень «выросли» — точки ниже по цепочке выбрасываются.
+  const CH=[[11,13,[13,15]],[13,15,[15]],[12,14,[14,16]],[14,16,[16]],[23,25,[25,27,29,31]],[25,27,[27,29,31]],[24,26,[26,28,30,32]],[26,28,[28,30,32]]];
+  for(const [a,b,drop] of CH){
+    const R=pct(fr.filter(f=>f.lm).map(f=>D(f.lm[a],f.lm[b])),0.85);
+    for(const f of fr)if(f.lm&&D(f.lm[a],f.lm[b])>1.35*R)for(const j of drop)f.lm[j].bad=true;
+  }
+  // Точка не может «телепортироваться»: отклонение от движения по инерции ограничено ускорением (≈300 ростов/с²).
+  // Проход вперёд и назад; точка выбрасывается, если не вписалась в оба.
+  const gate=(j,sg)=>{
+    const rej=new Set();let last=-1,vx=0,vy=0;
+    for(let q=0;q<n;q++){
+      const i=sg>0?q:n-1-q,l=fr[i].lm;if(!l||l[j].bad)continue;
+      if(last<0){last=i;continue}
+      const dt=fr[i].t-fr[last].t,p=fr[last].lm[j],ex=l[j].x-(p.x+vx*dt),ey=l[j].y-(p.y+vy*dt);
+      if(Math.hypot(ex,ey)>0.06*H+150*H*dt*dt)rej.add(i);
+      else{vx=(l[j].x-p.x)/dt;vy=(l[j].y-p.y)/dt;last=i}
+    }
+    return rej;
+  };
+  for(const j of [13,14,15,16,25,26,27,28]){const a=gate(j,1),b=gate(j,-1);for(const i of a)if(b.has(i))fr[i].lm[j].bad=true}
+  for(const f of fr)if(f.lm){if(f.lm[13].bad)f.lm[15].bad=f.lm[15].bad||false;for(const [an,ft] of [[27,[29,31]],[28,[30,32]]])if(f.lm[an].bad)for(const j of ft)f.lm[j].bad=true}
   const dts=[];for(let i=1;i<n;i++)dts.push(fr[i].t-fr[i-1].t);
   const thr=0.12*H*Math.max(1,median(dts)*60);
   for(let j=0;j<33;j++)for(let i=1;i<n-1;i++){
@@ -339,13 +361,30 @@ function analyze(frames,opts){
   const dts=[];for(let i=1;i<n;i++)dts.push(t[i]-t[i-1]);
   const dtm=median(dts);
   const w=Math.max(3,Math.round(cfg.smoothSec/dtm)|1);
-  const X=[],Y=[],V=[];
+  const X=[],Y=[],V=[],RX=[],RY=[];
   for(let j=0;j<33;j++){
     const x=new Array(n).fill(null),y=new Array(n).fill(null),v=new Array(n).fill(0);
     const lows=frames.filter(f=>f.lm&&f.lm[j].v<0.3).length/n;
     for(let i=0;i<n;i++){const q=frames[i].lm&&frames[i].lm[j];if(q){v[i]=q.v==null?1:q.v;if(!q.bad&&(v[i]>=0.3||lows>0.6)){x[i]=q.x;y[i]=q.y}}}
-    X[j]=smooth(fillGaps(x),w);Y[j]=smooth(fillGaps(y),w);V[j]=v;
+    RX[j]=x;RY[j]=y;V[j]=v;
   }
+  // локоть вращается вокруг плеча, кисть — вокруг локтя: пропуск заполняется поворотом, длина сегмента сохраняется
+  const polar=(j,p)=>{
+    const x=RX[j],y=RY[j],px=RX[p],py=RY[p];let last=-1;
+    for(let i=0;i<n;i++){
+      if(x[i]==null)continue;
+      if(last>=0&&i-last>1){
+        const a0=Math.atan2(y[last]-py[last],x[last]-px[last]),r0=Math.hypot(y[last]-py[last],x[last]-px[last]);
+        const a1=Math.atan2(y[i]-py[i],x[i]-px[i]),r1=Math.hypot(y[i]-py[i],x[i]-px[i]);
+        let da=a1-a0;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
+        for(let k=last+1;k<i;k++){const f=(k-last)/(i-last),a=a0+da*f,r=r0+(r1-r0)*f;x[k]=px[k]+r*Math.cos(a);y[k]=py[k]+r*Math.sin(a)}
+      }
+      last=i;
+    }
+  };
+  for(let j=0;j<33;j++)if(j<13||j>16){fillGaps(RX[j]);fillGaps(RY[j])}
+  for(const [j,p] of [[13,11],[14,12],[15,13],[16,14]]){polar(j,p);fillGaps(RX[j]);fillGaps(RY[j])}
+  for(let j=0;j<33;j++){X[j]=smooth(RX[j],w);Y[j]=smooth(RY[j],w)}
   const dist=(a,b,i)=>Math.hypot(X[a][i]-X[b][i],Y[a][i]-Y[b][i]);
   const ang=(a,b,c,i)=>{
     const ux=X[a][i]-X[b][i],uy=Y[a][i]-Y[b][i],vx=X[c][i]-X[b][i],vy=Y[c][i]-Y[b][i];
@@ -794,25 +833,53 @@ async function refine(fr){
   crop.width=crop.height=P;
   // режим IMAGE: каждый кадр распознаётся независимо, ошибка не тянется на соседние кадры при быстрых движениях
   let img=false;try{await lmk.setOptions({runningMode:'IMAGE'});img=true}catch(e){}
+  // эталонные длины костей (по кадрам первого прохода) — по ним оценивается правдоподобие позы
+  const SG=[[11,13],[13,15],[12,14],[14,16],[23,25],[25,27],[24,26],[26,28]];
+  const okf=fr.filter(f=>f.lm),RL=SG.map(([a,b])=>pct(okf.map(f=>d2(f.lm[a],f.lm[b])),0.85));
+  const smid=l=>({x:(l[11].x+l[12].x)/2,y:(l[11].y+l[12].y)/2}),torRef=median(okf.map(f=>d2(smid(f.lm),cen(f.lm))));
+  const badness=(l,ex)=>{
+    let b=0;SG.forEach(([a,c],q)=>{b+=Math.max(0,d2(l[a],l[c])/RL[q]-1.3)});
+    const tr=d2(smid(l),cen(l))/torRef;b+=2*Math.max(0,0.6-tr)+Math.max(0,tr-1.5);
+    if(cen(l).y-smid(l).y<0.3*torRef)b+=2;
+    return b+0.5*d2(cen(l),ex)/side;
+  };
+  const FLIP=j=>j===0?0:j<=3?j+3:j<=6?j-3:(j%2?j+1:j-1);
+  // распознать позу на увеличенном фрагменте; flip — зеркально (помогает на «неудобных» позах), k — масштаб фрагмента
+  const tryCrop=(bmp,cx,cy,k,flip)=>{
+    const sd=side*k,x0=cx-sd/2,y0=cy-0.58*sd;
+    cctx.setTransform(1,0,0,1,0,0);cctx.fillStyle='#000';cctx.fillRect(0,0,P,P);
+    if(flip)cctx.setTransform(-1,0,0,1,P,0);
+    const a0=Math.max(0,x0),b0=Math.max(0,y0),a1=Math.min(work.width,x0+sd),b1=Math.min(work.height,y0+sd);
+    if(a1-a0>2&&b1-b0>2)cctx.drawImage(bmp,a0*kv,b0*kv,(a1-a0)*kv,(b1-b0)*kv,(a0-x0)/sd*P,(b0-y0)/sd*P,(a1-a0)/sd*P,(b1-b0)/sd*P);
+    cctx.setTransform(1,0,0,1,0,0);
+    let res=null;try{res=img?lmk.detect(crop):lmk.detectForVideo(crop,ts+=40)}catch(e){}
+    return ((res&&res.landmarks)||[]).map(p=>{
+      const q=new Array(33);
+      for(let j=0;j<33;j++){const a=p[flip?FLIP(j):j];q[j]={x:x0+(flip?1-a.x:a.x)*sd,y:y0+a.y*sd,v:a.visibility==null?1:a.visibility}}
+      return q;
+    });
+  };
+  let retried=0;
   try{
   for(let i=0;i<fr.length;i++){
     if(S.cancel)throw new Error('cancel');
-    const x0=X[i]-side/2,y0=Y[i]-0.58*side;
-    const bmp=await createImageBitmap(fr[i].blob);
-    cctx.fillStyle='#000';cctx.fillRect(0,0,P,P);
-    const a0=Math.max(0,x0),b0=Math.max(0,y0),a1=Math.min(work.width,x0+side),b1=Math.min(work.height,y0+side);
-    if(a1-a0>2&&b1-b0>2)cctx.drawImage(bmp,a0*kv,b0*kv,(a1-a0)*kv,(b1-b0)*kv,(a0-x0)/side*P,(b0-y0)/side*P,(a1-a0)/side*P,(b1-b0)/side*P);
-    bmp.close&&bmp.close();
-    let res=null;
-    try{res=img?lmk.detect(crop):lmk.detectForVideo(crop,ts+=40)}catch(e){}
-    let best=null,bd=1e9;
-    for(const p of ((res&&res.landmarks)||[])){
-      const q=p.map(a=>({x:x0+a.x*side,y:y0+a.y*side,v:a.visibility==null?1:a.visibility}));
-      const d=d2(cen(q),{x:X[i],y:Y[i]});if(d<bd){bd=d;best=q}
+    const ex={x:X[i],y:Y[i]},bmp=await createImageBitmap(fr[i].blob);
+    const cands=fr[i].lm?[fr[i].lm]:[];
+    const add=list=>{for(const q of list)if(d2(cen(q),ex)<0.3*side)cands.push(q)};
+    const best=()=>cands.reduce((a,b)=>badness(b,ex)<badness(a,ex)?b:a,cands[0]);
+    add(tryCrop(bmp,X[i],Y[i],1,false));
+    // поза первого прохода учитывается, только если увеличенный фрагмент дал неправдоподобный результат
+    let pick=cands.length>1?cands.slice(1).reduce((a,b)=>badness(b,ex)<badness(a,ex)?b:a):null;
+    if(!pick||badness(pick,ex)>0.15){
+      retried++;
+      add(tryCrop(bmp,X[i],Y[i],1,true));
+      add(tryCrop(bmp,X[i],Y[i],1.4,false));
+      add(tryCrop(bmp,X[i],Y[i],0.8,false));
+      pick=cands.length?best():null;
     }
-    // уточнённую позу берём, только если она правдоподобного размера; иначе остаётся поза первого прохода
-    if(best&&bd<0.3*side){const k=sz(best)/ref;if(k>0.65&&k<1.5)fr[i].lm=best}
-    setBar((i+1)/fr.length);setStatus('Уточняю точки… '+(i+1)+'/'+fr.length);
+    bmp.close&&bmp.close();
+    if(pick)fr[i].lm=pick;
+    setBar((i+1)/fr.length);setStatus('Уточняю точки… '+(i+1)+'/'+fr.length+(retried?' (сложных кадров: '+retried+')':''));
     if(i%4===0)await new Promise(r=>setTimeout(r,0));
   }
   }finally{if(img)try{await lmk.setOptions({runningMode:'VIDEO'})}catch(e){}}
