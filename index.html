@@ -177,6 +177,7 @@ input[type=range]{accent-color:var(--acc)}
       <div><label>Бьющая рука</label><select id="sHand"><option value="auto">Авто</option><option value="R">Правая</option><option value="L">Левая</option></select></div>
       <div><label>Видео замедлено</label><select id="sSlow"><option value="1">Нет</option><option value="2">×2</option><option value="4">×4</option><option value="8">×8</option></select></div>
       <div><label>Частота кадров</label><select id="sFps"><option value="auto">Авто</option><option value="30">30</option><option value="60">60</option></select></div>
+      <div><label>Модель кисти</label><select id="sHandM"><option value="on">Вкл (точнее кисть)</option><option value="off">Выкл (быстрее)</option></select></div>
       <div><label>Модель позы</label><select id="sModel"><option value="full">Точная</option><option value="heavy">Максимальная (медленно)</option><option value="lite">Быстрая</option></select></div>
       <div><label>Сетка</label><select id="sNet"><option value="243">Мужская 243 см</option><option value="235">Любительская 235 см</option><option value="224">Женская 224 см</option><option value="0">Не учитывать</option></select></div>
       <div><label>Людей в кадре</label><select id="sMulti"><option value="1">Только я</option><option value="3">Несколько</option></select></div>
@@ -195,6 +196,8 @@ input[type=range]{accent-color:var(--acc)}
           <button class="sm" id="bZoom">Крупно</button>
           <button class="sm" id="bStrobe">Стробо</button>
           <button class="sm" id="bGhost">Эталон</button>
+          <button class="sm" id="bEdit">Править точки</button>
+          <button class="sm" id="bBall">Мяч</button>
         </div>
         <span class="sub" id="frameInfo"></span>
       </div>
@@ -203,9 +206,9 @@ input[type=range]{accent-color:var(--acc)}
       <h3>Фазы</h3>
       <div class="sub">«Показать» — перейти к кадру фазы. «Сюда ✎» — назначить фазой тот кадр, который сейчас на экране; всё сразу пересчитается.</div>
       <div id="phases"></div>
-      <div class="row" style="margin-top:8px"><button class="sm" id="bReset">Сбросить ручные метки</button></div>
+      <div class="row" style="margin-top:8px"><button class="sm" id="bReset">Сбросить ручные метки</button><button class="sm" id="bFixReset">Сбросить правки точек и мяч</button></div>
       <div id="markMsg" class="sub" style="color:var(--ok);margin-top:6px"></div>
-      <div class="sub" style="margin-top:6px">Чтобы выставить точно: включи «Крупно» и стрелками ◀ ▶ дойди до нужного кадра. Скелет не на том человеке? Вернись к видео и нажми «Отметить игроков».</div>
+      <div class="sub" style="margin-top:6px">Чтобы выставить точно: включи «Крупно» и стрелками ◀ ▶ дойди до нужного кадра. «Править точки» — перетащи пальцем сустав на место: соседние кадры (±0.2 с) подстроятся сами. «Мяч» — тапни по мячу на кадре, где он хорошо виден: приложение проследит его и возьмёт момент касания и скорость мяча. Скелет не на том человеке? Вернись к видео и нажми «Отметить игроков».</div>
     </div>
 
     <div class="card verdict" id="timing"></div>
@@ -318,7 +321,7 @@ input[type=range]{accent-color:var(--acc)}
 // Все настраиваемые пороги. src: 'coach' — распространённый тренерский ориентир,
 // 'heur' — эвристика автора, подбирается под себя. ok — зелёная зона [min,max],
 // bad — за этими границами красная зона; между ними жёлтая. null = без границы.
-const APP_VERSION='2.1.1 · 14.11.2026';
+const APP_VERSION='2.2.0 · 15.11.2026';
 const CONFIG = {
   hiSide: 1280,          // размер сохраняемых кадров (для показа и уточнения точек)
   cropPx: 512,           // размер увеличенного фрагмента вокруг игрока для второго прохода
@@ -391,7 +394,7 @@ function deriv(a,t){
 
 // Чистка трека: перепутанные лево/право и одиночные «скачки» точек
 function cleanFrames(frames){
-  const fr=frames.map(f=>({t:f.t,lm:f.lm?f.lm.map(p=>({x:p.x,y:p.y,v:p.v})):null}));
+  const fr=frames.map(f=>({t:f.t,lm:f.lm?f.lm.map(p=>({x:p.x,y:p.y,v:p.v,fix:p.fix})):null}));
   const D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),hs=[],n=fr.length;
   for(const f of fr)if(f.lm){const l=f.lm;hs.push((D(l[27],l[25])+D(l[25],l[23])+D(l[23],l[11])+D(l[28],l[26])+D(l[26],l[24])+D(l[24],l[12]))/2/0.78)}
   const H=median(hs);if(!(H>0))return fr;
@@ -399,7 +402,7 @@ function cleanFrames(frames){
   const mid=(l,a,b)=>({x:(l[a].x+l[b].x)/2,y:(l[a].y+l[b].y)/2});
   const tor=l=>D(mid(l,11,12),mid(l,23,24)),leg=l=>(D(l[23],l[25])+D(l[25],l[27])+D(l[24],l[26])+D(l[26],l[28]))/2;
   const ok0=fr.filter(f=>f.lm),mt=median(ok0.map(f=>tor(f.lm))),ml=median(ok0.map(f=>leg(f.lm)));
-  for(const f of fr)if(f.lm){const a=tor(f.lm)/mt,b=leg(f.lm)/ml;const up=mid(f.lm,23,24).y-mid(f.lm,11,12).y;if(a<0.5||a>1.7||b<0.5||b>1.7||up<0.3*mt){f.lm=null;f.rej=true}}
+  for(const f of fr)if(f.lm){const a=tor(f.lm)/mt,b=leg(f.lm)/ml;const up=mid(f.lm,23,24).y-mid(f.lm,11,12).y;if((a<0.5||a>1.7||b<0.5||b>1.7||up<0.3*mt)&&!f.lm.some(q=>q.fix)){f.lm=null;f.rej=true}}
   const groups=[[[13,14],[15,16]],[[25,26],[27,28],[29,30],[31,32]]];
   let prev=null;
   for(const f of fr){
@@ -440,6 +443,7 @@ function cleanFrames(frames){
     const d1=D(b[j],a[j]),d2=D(b[j],c[j]);
     if(d1>thr&&d2>thr&&D(a[j],c[j])<0.5*Math.min(d1,d2))b[j].bad=true;
   }
+  for(const f of fr)if(f.lm)for(const q of f.lm)if(q.fix)q.bad=false;
   return fr;
 }
 
@@ -973,9 +977,10 @@ function analyzeServe(frames,opts){
     const h1=((G-Y[tW][toss])/H*hCm+9)/100,h2=hC/100,v0=(h2-h1)/tossT+9.81*tossT/2;
     tossOver=(h1+(v0>0?v0*v0/(2*9.81):0)-h2)*100;
   }
-  const cfT=toss!=null?(vi(opts.tossIdx)!=null?'high':'mid'):'low';
+  const byBall=opts.tossOverCm!=null;if(byBall)tossOver=opts.tossOverCm;   // измерено по траектории мяча
+  const cfT=byBall?'high':toss!=null?(vi(opts.tossIdx)!=null?'high':'mid'):'low';
   add('tossT','Подброс','Подброс → удар',tossT,'с',2,cfT,'Время от выпуска мяча до удара',toss);
-  add('tossOver','Подброс','Мяч поднимается выше точки удара на',tossOver,'см',0,cfT,'По физике полёта мяча: время полёта + высота руки в момент выпуска + высота удара',toss);
+  add('tossOver','Подброс','Мяч поднимается выше точки удара на',tossOver,'см',0,cfT,byBall?'Измерено по траектории мяча: верхняя точка подброса минус высота мяча в момент удара':'По физике полёта мяча: время полёта + высота руки в момент выпуска + высота удара',toss);
   add('tossArm','Подброс','Рука при подбросе',toss!=null?ang(tS,tE,tW,toss):null,'°',0,toss!=null?confOf([tS,tE,tW],[toss]):'low','Угол в локте подбрасывающей руки в момент выпуска (180° — прямая)',toss);
   // ---- Замах
   add('elbowHeightBow','Замах','Локоть относительно плеча',(Y[S][bow]-Y[E][bow])/H*100,'% роста',0,confOf([S,E],[bow]),'Высота локтя над плечом в момент максимального отведения',bow);
@@ -997,7 +1002,7 @@ function analyzeServe(frames,opts){
   add('step','Опора','Перенос веса вперёд',dir*(hipX[c]-hipX[b0])/H*hCm,'см',0,confOf([23,24],[b0,c]),'Смещение таза по направлению удара от подброса до контакта',c);
   const notes=[];
   if(rng(t[c]-0.1,t[c]+0.1).some(i=>footLow[i]<G-0.1*H))notes.push('Похоже, удар нанесён в прыжке — этот режим рассчитан на подачу с места, часть оценок может быть неверной.');
-  if(toss==null)notes.push('Момент подброса не найден автоматически. Дойди до кадра, где мяч уходит с руки, и в «Фазах» у строки «Подброс» нажми «Сюда ✎».');
+  if(toss==null&&!byBall)notes.push('Момент подброса не найден автоматически. Дойди до кадра, где мяч уходит с руки, и в «Фазах» у строки «Подброс» нажми «Сюда ✎».');
   // ---- рекомендации
   const recs=[];
   for(const r of SRULES){
@@ -1008,11 +1013,11 @@ function analyzeServe(frames,opts){
   }
   recs.sort((a,b)=>b.score-a.score);
   const to=mm.tossOver,timing={head:'Подброс',signals:[],auto:uC==null};
-  if(toss==null){timing.verdict='info';timing.title='Подброс не найден';timing.text='Отметь кадр выпуска мяча вручную — тогда появится оценка высоты подброса.'}
+  if(to.value==null){timing.verdict='info';timing.title='Подброс не найден';timing.text='Отметь кадр выпуска мяча вручную — тогда появится оценка высоты подброса.'}
   else{
     timing.verdict=to.status==='ok'?'ok':'late';
     timing.title=to.status==='ok'?'Подброс в порядке':(to.value>TH.tossOver.ok[1]?'Подброс высоковат':'Подброс низковат');
-    timing.text='От выпуска мяча до удара '+tossT.toFixed(2)+' с; мяч поднимается примерно на '+to.value+' см выше точки удара.';
+    timing.text=(tossT!=null?'От выпуска мяча до удара '+tossT.toFixed(2)+' с; ':'')+'мяч поднимается '+(byBall?'':'примерно ')+'на '+to.value+' см выше точки удара'+(byBall?' (измерено по мячу).':'.');
   }
   const comY=hipY.map((v,i)=>0.55*v+0.45*shY[i]),comX=hipX.map((v,i)=>0.55*v+0.45*shX[i]);
   const kneeAt=i=>(ang(23,25,27,i)+ang(24,26,28,i))/2;
@@ -1154,6 +1159,42 @@ function analyzePass(frames,opts){
     keys:{ready,contact:c,autoContact:c,toss:null,bow:null,takeoff:null,apex:null,land:null,set:null},userContact:uC!=null,metrics:M,m:mm,timing,recs:recs.slice(0,3),
     good:M.filter(x=>x.status==='ok'&&x.conf!=='low').map(x=>x.name)};
 }
+// ======================= РУЧНЫЕ ПРАВКИ И МЯЧ =======================
+// Ручная правка точки распространяется на соседние кадры: поправка (куда сдвинули) плавно затухает за R секунд.
+// base — траектории без правок (X,Y), fixes — {сустав:{кадр:{x,y}}}
+function applyFixes(frames,base,fixes,R){
+  R=R||0.2;
+  const n=frames.length,t=frames.map(f=>f.t),out=frames.map(f=>Object.assign({},f,{lm:f.lm?f.lm.map(p=>Object.assign({},p)):null}));
+  for(const j in fixes){
+    const an=Object.keys(fixes[j]).map(Number).filter(i=>i>=0&&i<n);
+    for(let k=0;k<n;k++){
+      let sw=0,dx=0,dy=0;
+      for(const a of an){const d=Math.abs(t[k]-t[a]);if(d>=R)continue;const w=0.5*(1+Math.cos(Math.PI*d/R));sw+=w;dx+=w*(fixes[j][a].x-base.X[j][a]);dy+=w*(fixes[j][a].y-base.Y[j][a])}
+      if(!sw)continue;
+      if(!out[k].lm){if(!an.includes(k))continue;out[k].lm=Array.from({length:33},(q,m)=>({x:base.X[m][k],y:base.Y[m][k],v:0.5}))}
+      const nn=Math.max(1,sw);
+      out[k].lm[j]=an.includes(k)?{x:fixes[j][k].x,y:fixes[j][k].y,v:1,fix:true}:{x:base.X[j][k]+dx/nn,y:base.Y[j][k]+dy/nn,v:1,fix:true};
+    }
+  }
+  return out;
+}
+// Кинематика мяча: момент касания — кадр, где скорость мяча меняется резче всего (свободный полёт даёт только g)
+function ballKin(ball,t,pxPerM){
+  const idx=[];for(let i=0;i<ball.length;i++)if(ball[i])idx.push(i);
+  if(idx.length<6)return {ok:false};
+  const vel=(a,b)=>{const dt=t[b]-t[a];return {x:(ball[b].x-ball[a].x)/dt/pxPerM,y:(ball[b].y-ball[a].y)/dt/pxPerM}};
+  let best=null;
+  for(let q=1;q<idx.length-1;q++){
+    const i=idx[q],a=idx[Math.max(0,q-2)],b=idx[Math.min(idx.length-1,q+2)];
+    if(t[i]-t[a]>0.15||t[b]-t[i]>0.15)continue;
+    const v1=vel(a,i),v2=vel(i,b),dv=Math.hypot(v2.x-v1.x,v2.y-v1.y);
+    if(!best||dv>best.dv)best={q,i,dv,v1,v2};
+  }
+  if(!best||best.dv<3)return {ok:false};
+  let b2=idx[Math.min(idx.length-1,best.q+4)];if(t[b2]-t[best.i]>0.12)b2=idx[Math.min(idx.length-1,best.q+2)];
+  const va=vel(best.i,b2),sp=v=>Math.hypot(v.x,v.y);
+  return {ok:true,contact:best.i,dv:best.dv,speedBefore:sp(best.v1),speedAfter:sp(va),angleAfter:Math.atan2(-va.y,Math.abs(va.x))*180/Math.PI,dirX:Math.sign(va.x)||1};
+}
 // CORE-END ==================================================================
 </script>
 
@@ -1166,11 +1207,11 @@ const work=document.createElement('canvas'),wctx=work.getContext('2d',{willReadF
 const hi=document.createElement('canvas'),hctx=hi.getContext('2d');
 const crop=document.createElement('canvas'),cctx=crop.getContext('2d');
 const NOMARK=()=>({takeoff:null,contact:null,land:null,set:null,toss:null});
-const S={frames:null,res:null,idx:0,marks:NOMARK(),zoom:false,busy:false,cancel:false,play:null,file:'',bmp:new Map(),tok:0,picks:{me:null,setter:null,skip:[]},sel:-1,cands:null,setter:null};
+const S={frames:null,res:null,idx:0,marks:NOMARK(),zoom:false,busy:false,cancel:false,play:null,file:'',bmp:new Map(),tok:0,picks:{me:null,setter:null,skip:[]},sel:-1,cands:null,setter:null,fixes:{},ball:null,edit:false,pickBall:false,drag:null,vt:{z:1,sx:0,sy:0,kv:1}};
 let ts=0,lmk=null,lmkKey='';
 
 // ---------- настройки
-const SET_KEYS=['sHeight','sHand','sSlow','sFps','sModel','sMulti','sNet'];
+const SET_KEYS=['sHeight','sHand','sSlow','sFps','sModel','sMulti','sNet','sHandM'];
 try{const s=JSON.parse(localStorage.getItem('spikelab.set')||'{}');for(const k of SET_KEYS)if(s[k]!=null)$(k).value=s[k]}catch(e){}
 for(const k of SET_KEYS)$(k).addEventListener('change',()=>{
   const o={};for(const q of SET_KEYS)o[q]=$(q).value;
@@ -1237,8 +1278,19 @@ async function getLandmarker(num){
   const mk=delegate=>mp.PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:model,delegate},runningMode:'VIDEO',numPoses:num,minPoseDetectionConfidence:0.4,minPosePresenceConfidence:0.4,minTrackingConfidence:0.4});
   if(lmk){try{lmk.close()}catch(e){}}
   try{lmk=await mk('GPU')}catch(e){lmk=await mk('CPU')}
-  lmk._mk=mk;lmkKey=key;return lmk;
+  lmk._mk=mk;lmkKey=key;MP={mp,fs};return lmk;
 }
+// отдельная модель кисти: уточняет запястье, когда рука поднята (замах, удар, подброс)
+let MP=null,handLm=null;
+async function getHand(){
+  if(handLm!==null)return handLm||null;
+  try{
+    const o=d=>MP.mp.HandLandmarker.createFromOptions(MP.fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',delegate:d},runningMode:'IMAGE',numHands:2,minHandDetectionConfidence:0.3,minHandPresenceConfidence:0.3});
+    try{handLm=await o('GPU')}catch(e){handLm=await o('CPU')}
+  }catch(e){console.warn('hand model',e);handLm=false}
+  return handLm||null;
+}
+const hcv=document.createElement('canvas'),hctx2=hcv.getContext('2d');hcv.width=hcv.height=256;
 function seek(tv){
   return new Promise(res=>{
     if(Math.abs(video.currentTime-tv)<1e-4)return res();
@@ -1349,7 +1401,24 @@ async function refine(fr,light){
       return q;
     });
   };
-  let retried=0;
+  const hl=!light&&$('sHandM').value==='on'?await getHand():null;
+  // кисть ищется на увеличенном фрагменте за концом предплечья; берётся, только если запястье на правдоподобном расстоянии от локтя
+  const tryHand=(bmp,l,el,wr,ref)=>{
+    const sd=Math.max(40,2.4*ref),cx=l[wr].x+0.35*(l[wr].x-l[el].x),cy=l[wr].y+0.35*(l[wr].y-l[el].y),x0=cx-sd/2,y0=cy-sd/2;
+    hctx2.fillStyle='#000';hctx2.fillRect(0,0,256,256);
+    const a0=Math.max(0,x0),b0=Math.max(0,y0),a1=Math.min(work.width,x0+sd),b1=Math.min(work.height,y0+sd);
+    if(a1-a0<4||b1-b0<4)return null;
+    hctx2.drawImage(bmp,a0*kv,b0*kv,(a1-a0)*kv,(b1-b0)*kv,(a0-x0)/sd*256,(b0-y0)/sd*256,(a1-a0)/sd*256,(b1-b0)/sd*256);
+    let res=null;try{res=hl.detect(hcv)}catch(e){return null}
+    let best=null,bs=1e9;
+    for(const h of ((res&&res.landmarks)||[])){
+      const w0={x:x0+h[0].x*sd,y:y0+h[0].y*sd},m9={x:x0+h[9].x*sd,y:y0+h[9].y*sd},dE=d2(w0,l[el])/ref;
+      if(dE<0.55||dE>1.6||d2(m9,l[el])<=d2(w0,l[el]))continue;
+      const sc=Math.abs(dE-1);if(sc<bs){bs=sc;best=w0}
+    }
+    return best;
+  };
+  let retried=0,hands=0;
   try{
   for(let i=0;i<fr.length;i++){
     if(S.cancel)throw new Error('cancel');
@@ -1367,9 +1436,13 @@ async function refine(fr,light){
       add(tryCrop(bmp,X[i],Y[i],0.8,false));
       pick=cands.length?best():null;
     }
+    if(hl&&pick)for(const [sh,el,wr,q] of [[11,13,15,1],[12,14,16,3]]){
+      if(pick[wr].y>=pick[sh].y)continue;
+      const hw=tryHand(bmp,pick,el,wr,RL[q]);if(hw){pick[wr]={x:hw.x,y:hw.y,v:1};hands++}
+    }
     bmp.close&&bmp.close();
     if(pick)fr[i].lm=pick;
-    setBar((i+1)/fr.length);setStatus((light?'Уточняю связующего… ':'Уточняю точки… ')+(i+1)+'/'+fr.length+(retried?' (сложных кадров: '+retried+')':''));
+    setBar((i+1)/fr.length);setStatus((light?'Уточняю связующего… ':'Уточняю точки… ')+(i+1)+'/'+fr.length+(retried?' (сложных кадров: '+retried+')':'')+(hands?' · кисть уточнена: '+hands:''));
     if(i%4===0)await new Promise(r=>setTimeout(r,0));
   }
   }finally{if(img)try{await lmk.setOptions({runningMode:'VIDEO'})}catch(e){}}
@@ -1457,7 +1530,7 @@ async function run(center){
       const sw=()=>{for(const f of fr){const q=f.lm;f.lm=f.lm2;f.lm2=q}};
       sw();try{await refine(fr,true)}finally{sw()}
     }
-    S.frames=fr;S.marks=NOMARK();$('markMsg').textContent='';S.bmp.forEach(b=>b.close&&b.close());S.bmp.clear();
+    S.frames=fr;S.fixes={};S.ball=null;S.marks=NOMARK();$('markMsg').textContent='';S.bmp.forEach(b=>b.close&&b.close());S.bmp.clear();
     S.fps=rate;
     let msg='Готово: '+fr.length+' кадров, '+Math.round(rate)+' замеров/с.';
     if(center!=null){
@@ -1534,16 +1607,59 @@ $('btnAuto').onclick=()=>run(null);
 $('btnHere').onclick=()=>run(video.currentTime);
 
 // ---------- расчёт и вывод
+function analyzeMode(fr,o,ex){
+  const c=S.marks.contact!=null?S.marks.contact:ex.contactIdx;
+  if(S.mode==='attack')return analyze(fr,{netCm:o.netCm,heightCm:o.heightCm,hand:o.hand,contactIdx:c,takeoffIdx:S.marks.takeoff,landIdx:S.marks.land,setIdx:S.marks.set!=null?S.marks.set:ex.setIdx});
+  if(S.mode==='pass')return analyzePass(fr,{heightCm:o.heightCm,contactIdx:c});
+  return analyzeServe(fr,{kind:S.mode,heightCm:o.heightCm,hand:o.hand,contactIdx:c,tossIdx:S.marks.toss!=null?S.marks.toss:ex.tossIdx,tossOverCm:ex.tossOverCm});
+}
 function compute(jump){
-  const o=opt();
-  const base={netCm:o.netCm,heightCm:o.heightCm,hand:o.hand,contactIdx:S.marks.contact,takeoffIdx:S.marks.takeoff,landIdx:S.marks.land};
-  let r=S.mode==='attack'?analyze(S.frames,{...base,setIdx:S.marks.set}):S.mode==='pass'?analyzePass(S.frames,{heightCm:o.heightCm,contactIdx:S.marks.contact}):analyzeServe(S.frames,{kind:S.mode,heightCm:o.heightCm,hand:o.hand,contactIdx:S.marks.contact,tossIdx:S.marks.toss}),sr=null;
+  const o=opt(),ex={};let fr=S.frames,r=analyzeMode(fr,o,ex),sr=null,kin=null,autoWrist=false;
+  const fx={};for(const j in S.fixes)if(Object.keys(S.fixes[j]).length)fx[j]=Object.assign({},S.fixes[j]);
+  if(r.ok&&S.ball){
+    const pxm=r.H/(o.heightCm/100),B=S.ball.pts,rad=S.ball.rad,near=i=>{for(const d of [0,1,-1,2,-2])if(B[i+d])return B[i+d];return null};
+    kin=ballKin(B,r.t,pxm);
+    if(kin.ok){
+      // момент касания — по мячу, если контакт не поставлен вручную
+      if(S.marks.contact==null){ex.contactIdx=kin.contact;const r2=analyzeMode(fr,o,ex);if(r2.ok&&!r2.ignored.includes('contact'))r=r2;else delete ex.contactIdx}
+      const c=r.keys.contact,bc=near(c);
+      if(bc&&(S.mode==='float'||S.mode==='power')){
+        // подброс: верхняя точка мяча перед ударом и кадр, где мяч ещё у подбрасывающей руки
+        const tW=r.hand==='L'?16:15;let ia=null;
+        for(let i=c;i>=0&&r.t[c]-r.t[i]<=1.8;i--)if(B[i]&&(ia==null||B[i].y<B[ia].y))ia=i;
+        if(ia!=null){
+          ex.tossOverCm=(bc.y-B[ia].y)/pxm*100;
+          for(let i=ia;i>=0;i--)if(B[i]&&Math.hypot(B[i].x-r.X[tW][i],B[i].y-r.Y[tW][i])<1.4*rad){ex.tossIdx=i;break}
+        }
+      }
+      if(bc&&S.mode!=='pass'){
+        // в момент удара кисть лежит на мяче: если точка запястья далеко от мяча — ставим её по мячу
+        const W=r.hand==='L'?15:16,E=r.hand==='L'?13:14,Sh=r.hand==='L'?11:12;
+        const dw=Math.hypot(r.X[W][c]-bc.x,r.Y[W][c]-bc.y),ds=Math.hypot(r.X[Sh][c]-bc.x,r.Y[Sh][c]-bc.y),de=Math.hypot(bc.x-r.X[E][c],bc.y-r.Y[E][c]);
+        const mine=fx[W]&&Object.keys(fx[W]).some(k=>Math.abs(k-c)<=3);
+        if(dw>1.7*rad&&ds<0.5*r.H&&de>1&&!mine){(fx[W]=fx[W]||{})[c]={x:bc.x-(bc.x-r.X[E][c])/de*rad,y:bc.y-(bc.y-r.Y[E][c])/de*rad};autoWrist=true}
+      }
+    }
+  }
+  if(r.ok&&(Object.keys(fx).length||ex.tossOverCm!=null||ex.tossIdx!=null)){
+    const fr2=Object.keys(fx).length?applyFixes(fr,r,fx):fr,r3=analyzeMode(fr2,o,ex);
+    if(r3.ok&&!r3.ignored.length){r=r3;fr=fr2}
+    else if(ex.tossIdx!=null){delete ex.tossIdx;const r4=analyzeMode(fr2,o,ex);if(r4.ok&&!r4.ignored.length){r=r4;fr=fr2}}
+  }
   if(S.mode==='attack'&&r.ok&&S.frames.some(f=>f.lm2)){
     const tc=r.t[r.keys.contact];
     sr=analyzeSetter(S.frames.map(f=>({t:f.t,lm:f.lm2})),{heightCm:o.heightCm,netCm:o.netCm,before:tc-0.25,tContact:tc,contactH:r.m.contactH.value,verdict:r.timing.verdict,releaseIdx:S.marks.set});
     // момент паса берётся у связующего автоматически, если «Пас» не поставлен вручную
-    if(sr.ok&&S.marks.set==null){const r2=analyze(S.frames,{...base,setIdx:sr.release});if(r2.ok&&!r2.ignored.length)r=r2}
+    if(sr.ok&&S.marks.set==null){ex.setIdx=sr.release;const r2=analyzeMode(fr,o,ex);if(r2.ok&&!r2.ignored.length)r=r2}
   }
+  if(r.ok&&kin&&kin.ok){
+    const bm=(id,name,v,unit,how)=>{const m={id,phase:'Мяч',name,value:v==null||!isFinite(v)?null:+v.toFixed(unit==='°'?0:1),unit,status:'info',target:'',src:'',conf:'mid',how,txt:null,at:kin.contact};r.metrics.push(m);r.m[id]=m};
+    bm('ballSpeed','Скорость мяча после касания',kin.speedAfter,'м/с','По смещению мяча в первых кадрах после касания, в плоскости кадра');
+    bm('ballAngle','Угол вылета мяча',kin.angleAfter,'°','Угол к горизонту: плюс — вверх, минус — вниз');
+    if(S.mode==='pass')bm('ballIn','Скорость мяча до касания',kin.speedBefore,'м/с','По смещению мяча в последних кадрах перед касанием');
+    if(ex.contactIdx!=null&&r.keys.contact===kin.contact){r.timing.auto=false;r.timing.signals.push('Момент касания взят по мячу (резкая смена его скорости).')}
+    if(autoWrist)r.timing.signals.push('Кисть на касании поставлена по положению мяча.');
+  }else if(r.ok&&S.ball)r.notes.push('Мяч отслежен, но момент касания по нему найти не удалось (мяч потерян рядом с ударом). Тапни по мячу на другом кадре — ближе к касанию.');
   S.res=r;S.setter=sr;
   if(!r.ok){$('results').classList.add('hide');setStatus(r.error);return}
   $('results').classList.remove('hide');
@@ -1627,6 +1743,14 @@ function drawOverlay(ctx,i,scale,lw){
     const q=S.setter;ctx.lineWidth=2*w;ctx.strokeStyle='rgba(120,200,255,.9)';
     for(const [a,b] of BONES){ctx.beginPath();ctx.moveTo(q.X[a][i]*k,q.Y[a][i]*k);ctx.lineTo(q.X[b][i]*k,q.Y[b][i]*k);ctx.stroke()}
   }
+  if(S.ball){
+    const B=S.ball.pts;ctx.strokeStyle='rgba(57,213,255,.95)';ctx.lineWidth=2*w;ctx.beginPath();let st=false;
+    for(let q=Math.max(0,i-14);q<=i;q++){if(!B[q]){st=false;continue}st?ctx.lineTo(B[q].x*k,B[q].y*k):ctx.moveTo(B[q].x*k,B[q].y*k);st=true}ctx.stroke();
+    if(B[i]){ctx.beginPath();ctx.arc(B[i].x*k,B[i].y*k,S.ball.rad*k,0,7);ctx.stroke()}
+  }
+  for(const j in S.fixes)if(S.fixes[j][i]){ctx.strokeStyle='#ffb020';ctx.lineWidth=2.5*w;ctx.beginPath();ctx.arc(r.X[j][i]*k,r.Y[j][i]*k,7*w,0,7);ctx.stroke()}
+  if(S.edit){ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=1.5*w;for(const j of GJ){ctx.beginPath();ctx.arc(r.X[j][i]*k,r.Y[j][i]*k,9*w,0,7);ctx.stroke()}}
+  if(S.drag&&S.drag.pos){ctx.strokeStyle='#ffb020';ctx.lineWidth=2.5*w;ctx.beginPath();ctx.moveTo(r.X[S.drag.j][i]*k,r.Y[S.drag.j][i]*k);ctx.lineTo(S.drag.pos.x*k,S.drag.pos.y*k);ctx.stroke();ctx.beginPath();ctx.arc(S.drag.pos.x*k,S.drag.pos.y*k,8*w,0,7);ctx.stroke()}
   // стробоскоп: позы ключевых фаз на одном кадре
   if(S.strobe){
     ctx.lineWidth=2*w;ctx.strokeStyle='rgba(255,255,255,.55)';
@@ -1678,13 +1802,13 @@ async function show(i){
   i=Math.max(0,Math.min(r.n-1,i));S.idx=i;$('scrub').value=i;
   const tok=++S.tok,b=await bitmap(i);
   if(tok!==S.tok)return;
-  const kv=view.width/work.width;let z=1;
+  const kv=view.width/work.width;let z=1;S.vt={z:1,sx:0,sy:0,kv};
   vctx.setTransform(1,0,0,1,0,0);
   if(S.zoom){
     const hx=(r.X[23][i]+r.X[24][i])/2*kv,hy=(r.Y[23][i]+r.Y[24][i])/2*kv;
     const sh=Math.min(view.height,2.6*r.H*kv);z=view.height/sh;const sw=view.width/z;
     const sx=Math.max(0,Math.min(view.width-sw,hx-sw/2)),sy=Math.max(0,Math.min(view.height-sh,hy-0.6*sh));
-    vctx.setTransform(z,0,0,z,-sx*z,-sy*z);
+    vctx.setTransform(z,0,0,z,-sx*z,-sy*z);S.vt={z,sx,sy,kv};
   }
   vctx.drawImage(b,0,0,view.width,view.height);
   drawOverlay(vctx,i,kv,Math.max(1,view.width/640)/z);
@@ -1693,6 +1817,99 @@ async function show(i){
   const dc=((r.t[i]-r.t[r.keys.contact])*1000).toFixed(0);
   $('frameInfo').textContent='кадр '+(i+1)+'/'+r.n+' · '+(dc>0?'+':'')+dc+' мс от контакта';
 }
+// ---------- правка точек пальцем и отметка мяча
+const say=(txt,col)=>{const m=$('markMsg');m.style.color=col||'var(--ok)';m.textContent=txt};
+const toWork=e=>{const b=view.getBoundingClientRect(),v=S.vt;return {x:((e.clientX-b.left)*view.width/b.width/v.z+v.sx)/v.kv,y:((e.clientY-b.top)*view.height/b.height/v.z+v.sy)/v.kv}};
+const touchMode=()=>{view.style.touchAction=S.edit||S.pickBall?'none':'pan-y';$('bEdit').classList.toggle('pri',S.edit);$('bBall').classList.toggle('pri',S.pickBall)};
+$('bEdit').onclick=()=>{S.edit=!S.edit;S.pickBall=false;touchMode();show(S.idx);say(S.edit?'Режим правки: перетащи кружок сустава на правильное место. Соседние кадры подстроятся.':'Режим правки выключен.')};
+$('bBall').onclick=()=>{S.pickBall=!S.pickBall;S.edit=false;touchMode();show(S.idx);say(S.pickBall?'Тапни по центру мяча на этом кадре. Лучше выбрать кадр, где мяч в полёте и ничем не закрыт.':'')};
+$('bFixReset').onclick=()=>{S.fixes={};S.ball=null;compute();say('Правки точек и трек мяча сброшены.')};
+view.addEventListener('pointerdown',e=>{
+  const r=S.res;if(!r||!r.ok||S.busy)return;
+  if(S.pickBall){const p=toWork(e);S.pickBall=false;touchMode();trackBall(S.idx,p.x,p.y);return}
+  if(!S.edit)return;
+  stopPlay();
+  const p=toWork(e),b=view.getBoundingClientRect(),thr=34*view.width/b.width/(S.vt.z*S.vt.kv);let bj=-1,bd=1e9;
+  for(const j of GJ){const d=Math.hypot(r.X[j][S.idx]-p.x,r.Y[j][S.idx]-p.y);if(d<bd){bd=d;bj=j}}
+  if(bd>thr)return;
+  S.drag={j:bj,pos:p};try{view.setPointerCapture(e.pointerId)}catch(err){}
+  e.preventDefault();show(S.idx);
+});
+view.addEventListener('pointermove',e=>{if(!S.drag)return;S.drag.pos=toWork(e);e.preventDefault();show(S.idx)});
+const endDrag=e=>{
+  if(!S.drag)return;const {j,pos}=S.drag,i=S.idx;S.drag=null;
+  (S.fixes[j]=S.fixes[j]||{})[i]=pos;
+  compute();
+  if(!S.res.ok){delete S.fixes[j][i];compute();say('С этой правкой разбор не сходится — правка отменена.','var(--bad)')}
+  else say('✓ Точка исправлена на кадре '+(i+1)+', соседние кадры (±0.2 с) подстроены. Оранжевое кольцо — твоя правка.');
+};
+view.addEventListener('pointerup',endDrag);view.addEventListener('pointercancel',()=>{S.drag=null;show(S.idx)});
+
+// ---------- трекинг мяча: цвет мяча (по тапу) + отличие от фона + предсказание движения
+const bcv=document.createElement('canvas'),bctx=bcv.getContext('2d',{willReadFrequently:true});
+async function trackBall(i0,bx,by){
+  const r=S.res,n=r.n,fr=S.frames,o=opt();
+  const rad=Math.max(3,0.105/(o.heightCm/100)*r.H);            // радиус мяча (21 см в диаметре) в координатах кадра
+  const s=Math.min(hi.width/work.width,Math.max(0.25,6/rad)),w=Math.round(work.width*s),h=Math.round(work.height*s),rs=rad*s;
+  bcv.width=w;bcv.height=h;busy(true);$('btnCancel').classList.add('hide');
+  const grabF=async i=>{const b=await createImageBitmap(fr[i].blob);bctx.drawImage(b,0,0,w,h);b.close&&b.close();return bctx.getImageData(0,0,w,h).data};
+  try{
+    // фон: медиана по 7 кадрам, равномерно взятым из ролика
+    say('Мяч: строю фон…');
+    const K=7,smp=[];for(let k=0;k<K;k++)smp.push(await grabF(Math.round(k*(n-1)/(K-1))));
+    const bg=new Uint8Array(w*h*3),tmp=new Array(K);
+    for(let p=0;p<w*h;p++)for(let c=0;c<3;c++){for(let k=0;k<K;k++)tmp[k]=smp[k][p*4+c];tmp.sort((a,b)=>a-b);bg[p*3+c]=tmp[K>>1]}
+    // цвета мяча: по пикселям вокруг тапа
+    const d0=await grabF(i0),hist=new Uint16Array(4096);let tot=0;const cx0=bx*s,cy0=by*s,rr=Math.max(2,0.75*rs);
+    for(let y=Math.max(0,Math.floor(cy0-rr));y<=Math.min(h-1,cy0+rr);y++)for(let x=Math.max(0,Math.floor(cx0-rr));x<=Math.min(w-1,cx0+rr);x++){
+      if((x-cx0)**2+(y-cy0)**2>rr*rr)continue;const q=(y*w+x)*4;hist[(d0[q]>>4)<<8|(d0[q+1]>>4)<<4|(d0[q+2]>>4)]++;tot++}
+    const order=[...hist.keys()].filter(b=>hist[b]).sort((a,b)=>hist[b]-hist[a]),flag=new Uint8Array(4096);let acc=0;
+    // в модель цвета идут только основные цвета мяча (не смесь на границах); соседние оттенки добавляются лишь к самым частым
+    for(const b of order){if(acc>0.8*tot||hist[b]<0.03*tot)break;acc+=hist[b];
+      const R=b>>8,G=(b>>4)&15,Bl=b&15,dl=hist[b]>=0.08*tot?1:0;
+      for(let a=-dl;a<=dl;a++)for(let c=-dl;c<=dl;c++)for(let e=-dl;e<=dl;e++){const R2=R+a,G2=G+c,B2=Bl+e;if(R2<0||R2>15||G2<0||G2>15||B2<0||B2>15)continue;flag[R2<<8|G2<<4|B2]=1}}
+    const minCnt=Math.max(4,0.12*Math.PI*rs*rs);
+    // центр цветного пятна в круге (cx,cy,R); useBg — требовать отличие от фона
+    const blob=(d,cx,cy,R,useBg)=>{
+      let sx=0,sy=0,c=0;
+      for(let y=Math.max(0,Math.floor(cy-R));y<=Math.min(h-1,cy+R);y++)for(let x=Math.max(0,Math.floor(cx-R));x<=Math.min(w-1,cx+R);x++){
+        if((x-cx)**2+(y-cy)**2>R*R)continue;const p=y*w+x,q=p*4;
+        if(!flag[(d[q]>>4)<<8|(d[q+1]>>4)<<4|(d[q+2]>>4)])continue;
+        if(useBg&&Math.abs(d[q]-bg[p*3])+Math.abs(d[q+1]-bg[p*3+1])+Math.abs(d[q+2]-bg[p*3+2])<45)continue;
+        sx+=x;sy+=y;c++}
+      return c?{x:sx/c,y:sy/c,c}:null;
+    };
+    const find=(d,px,py,R)=>{
+      for(const useBg of [true,false]){
+        let b=blob(d,px,py,R,useBg);if(!b||b.c<minCnt)continue;
+        for(const R2 of [Math.max(1.6*rs,R/2),1.6*rs,1.4*rs]){const b2=blob(d,b.x,b.y,R2,useBg);if(!b2||b2.c<minCnt)break;b=b2}
+        // без проверки фона ищем только вблизи и только компактное пятно — иначе цепляются похожие по цвету стены и линии
+        if(!useBg){if(R>3*rs)continue;const big=blob(d,b.x,b.y,2.6*rs,false);if(big&&big.c>2.2*Math.PI*rs*rs)continue}
+        return b;
+      }
+      return null;
+    };
+    const pts=new Array(n).fill(null),gdt=9.81*(r.H/(o.heightCm/100))*s*r.dtm*r.dtm;
+    const b0=find(d0,cx0,cy0,2*rs)||{x:cx0,y:cy0};pts[i0]={x:b0.x/s,y:b0.y/s};
+    let done=0;
+    for(const dir of [1,-1]){
+      let px=b0.x,py=b0.y,vx=0,vy=0,gap=0;
+      for(let i=i0+dir;i>=0&&i<n;i+=dir){
+        const d=await grabF(i);
+        vy+=gdt*dir;                                  // свободный полёт: скорость вниз растёт на g·dt
+        const ex=px+vx,ey=py+vy,R=Math.min(12*rs,2.2*rs+0.6*Math.hypot(vx,vy)+gap*2.5*rs),b=find(d,ex,ey,R);
+        if(b){vx=(b.x-px)/(gap+1);vy=(b.y-py)/(gap+1);px=b.x;py=b.y;gap=0;pts[i]={x:b.x/s,y:b.y/s}}
+        else{px=ex;py=ey;if(++gap>8)break}
+        if(++done%6===0){say('Мяч: кадр '+done+'…');await new Promise(q=>setTimeout(q,0))}
+      }
+    }
+    S.ball={pts,rad};
+    const cnt=pts.filter(Boolean).length;
+    busy(false);compute();
+    say(cnt<6?'Мяч найден только на '+cnt+' кадрах — попробуй тапнуть по нему на другом кадре, где он виден целиком.':'✓ Мяч отслежен на '+cnt+' кадрах из '+n+' (голубая линия). '+(S.res.m&&S.res.m.ballSpeed?'Касание и скорость мяча добавлены в разбор.':''),cnt<6?'var(--warn)':'var(--ok)');
+  }catch(e){console.error(e);busy(false);say('Не удалось отследить мяч: '+e.message,'var(--bad)')}
+}
+window.__sl={S,work,hi,view,compute:(...a)=>compute(...a),trackBall:(...a)=>trackBall(...a),show:(...a)=>show(...a)};   // для самопроверки
 $('bStrobe').onclick=()=>{S.strobe=!S.strobe;$('bStrobe').classList.toggle('pri',S.strobe);show(S.idx)};
 $('bGhost').onclick=()=>{if(!S.ref){$('markMsg').style.color='var(--warn)';$('markMsg').textContent='Эталона пока нет: сохрани удачную попытку и во вкладке «История» нажми на ней ★.';return}S.ghost=!S.ghost;$('bGhost').classList.toggle('pri',S.ghost);show(S.idx)};
 $('bZoom').onclick=()=>{S.zoom=!S.zoom;$('bZoom').classList.toggle('pri',S.zoom);show(S.idx)};
@@ -1759,7 +1976,7 @@ async function showFocus(){
   c.style.display='';
   c.innerHTML='<div class="sub">Фокус с прошлой попытки ('+new Date(a[0].date).toLocaleDateString('ru')+')</div><b>'+esc(a[0].recs[0].title)+'</b><div class="sub">💡 '+esc(a[0].recs[0].hack)+'</div>';
 }
-const TREND=[['swing','Приём: мах руками, °'],['ready','Приём: платформа готова до касания, с'],['elbows','Приём: руки на касании, °'],['follow','Подача: проводка руки, см'],['tossOver','Подача: подброс выше точки удара, см'],['jump','Высота прыжка, см'],['contactVsApex','Контакт относительно пика, мс'],['handSpeed','Скорость кисти, м/с'],['reach','Высота точки удара, % руки'],['elbowContact','Рука на контакте, °'],['approachSpeed','Скорость разбега, м/с'],['kneeLanding','Амортизация коленями, °']];
+const TREND=[['ballSpeed','Скорость мяча после касания, м/с'],['swing','Приём: мах руками, °'],['ready','Приём: платформа готова до касания, с'],['elbows','Приём: руки на касании, °'],['follow','Подача: проводка руки, см'],['tossOver','Подача: подброс выше точки удара, см'],['jump','Высота прыжка, см'],['contactVsApex','Контакт относительно пика, мс'],['handSpeed','Скорость кисти, м/с'],['reach','Высота точки удара, % руки'],['elbowContact','Рука на контакте, °'],['approachSpeed','Скорость разбега, м/с'],['kneeLanding','Амортизация коленями, °']];
 $('trendSel').innerHTML=TREND.map(t=>'<option value="'+t[0]+'">'+t[1]+'</option>').join('');
 $('trendSel').onchange=renderHistory;
 const mv=(s,id)=>{const m=s.metrics.find(x=>x.id===id);return m?m.value:null};
