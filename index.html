@@ -321,7 +321,7 @@ input[type=range]{accent-color:var(--acc)}
 // Все настраиваемые пороги. src: 'coach' — распространённый тренерский ориентир,
 // 'heur' — эвристика автора, подбирается под себя. ok — зелёная зона [min,max],
 // bad — за этими границами красная зона; между ними жёлтая. null = без границы.
-const APP_VERSION='2.2.1 · 17.11.2026';
+const APP_VERSION='2.2.2 · 17.11.2026';
 const CONFIG = {
   hiSide: 1280,          // размер сохраняемых кадров (для показа и уточнения точек)
   cropPx: 512,           // размер увеличенного фрагмента вокруг игрока для второго прохода
@@ -1247,11 +1247,14 @@ const MODES={attack:'Атака: разбег, прыжок, замах, кон�
 const MODE_NAME={attack:'Атака',float:'Планер',power:'Силовая',pass:'Приём'};
 try{S.mode=localStorage.getItem('spikelab.mode')}catch(e){}
 if(!MODES[S.mode])S.mode='attack';
+try{S.serveKind=localStorage.getItem('spikelab.serve')}catch(e){}
+if(S.serveKind!=='power')S.serveKind='float';
 function setMode(m,user){
   const was=S.mode;S.mode=m;
   try{localStorage.setItem('spikelab.mode',m)}catch(e){}
   document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
-  $('modeHint').textContent=MODES[m];
+  $('modeHint').textContent=MODES[m];$('btnAuto').textContent='Разобрать · '+MODE_NAME[m];
+  if(m==='float'||m==='power'){S.serveKind=m;try{localStorage.setItem('spikelab.serve',m)}catch(e){}}
   const fam=q=>q==='float'||q==='power'?'serve':q;
   if(user&&S.frames){if(fam(was)!==fam(m))S.marks=NOMARK();$('markMsg').textContent='';compute(true)}
   if(user)loadRef();
@@ -1279,7 +1282,7 @@ $('file').onchange=async e=>{
   if(!video.duration){setStatus('Не удалось открыть видео. Попробуй другой файл (MP4/MOV).');return}
   try{await video.play();video.pause()}catch(err){}
   const long=video.duration>4;$('btnHere').classList.toggle('hide',!long);$('hereHint').classList.toggle('hide',!long);
-  setStatus('Длина '+video.duration.toFixed(1)+' с, '+video.videoWidth+'×'+video.videoHeight+'. Нажми «Разобрать!».');
+  setStatus('Длина '+video.duration.toFixed(1)+' с, '+video.videoWidth+'×'+video.videoHeight+'. Проверь режим сверху и нажми «Разобрать».');
 };
 function setStatus(s){$('status').textContent=s}
 function setBar(p){$('bar').classList.toggle('hide',p==null);if(p!=null)$('bar').firstElementChild.style.width=Math.round(p*100)+'%'}
@@ -1560,7 +1563,7 @@ async function run(center){
       if(!S.res.ok||S.res.ignored.length){S.marks.contact=null;compute(true);msg+=' Этот кадр не попал в прыжок — контакт определён автоматически, проверь его ниже.'}
       else msg+=' Контакт поставлен на выбранный кадр.';
     }else compute(true);
-    if(S.res.ok&&S.res.phys.good&&S.res.phys.ratio<0.45&&opt().slow===1){
+    if(S.res.ok&&S.res.phys&&S.res.phys.good&&S.res.phys.ratio<0.45&&opt().slow===1){
       const k=1/Math.sqrt(S.res.phys.ratio),kk=[2,4,8].reduce((a,b)=>Math.abs(b-k)<Math.abs(a-k)?b:a);
       $('sSlow').value=String(kk);retime();
       msg+=' Похоже, видео замедлено примерно ×'+kk+' (тело падает медленнее, чем положено по g) — учёл это автоматически. Если это не так, поменяй «Видео замедлено» в настройках.';
@@ -1621,7 +1624,7 @@ $('roleRow').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   if(is(P.me))P.me=null;if(is(P.setter))P.setter=null;P.skip=P.skip.filter(q=>!is(q));
   if(role==='skip')P.skip.push(pk);else P[role]=pk;
   S.sel=-1;drawPick();
-  $('pickMsg').textContent=pickSummary()+' Можно отметить ещё кого-то или нажать «Разобрать!».';
+  $('pickMsg').textContent=pickSummary()+' Можно отметить ещё кого-то или нажать «Разобрать».';
 });
 $('btnAuto').onclick=()=>run(null);
 $('btnHere').onclick=()=>run(video.currentTime);
@@ -1634,7 +1637,12 @@ function analyzeMode(fr,o,ex){
   return analyzeServe(fr,{kind:S.mode,heightCm:o.heightCm,hand:o.hand,contactIdx:c,tossIdx:S.marks.toss!=null?S.marks.toss:ex.tossIdx,tossOverCm:ex.tossOverCm});
 }
 function compute(jump){
-  const o=opt(),ex={};let fr=S.frames,r=analyzeMode(fr,o,ex),sr=null,kin=null,autoWrist=false;
+  const o=opt(),ex={};let fr=S.frames,r=analyzeMode(fr,o,ex),sr=null,kin=null,autoWrist=false,switched=null;
+  // выбран режим «Атака», а прыжка в ролике нет: если ролик разбирается как подача — переключаемся сами, а не прячем разбор
+  if(!r.ok&&S.mode==='attack'&&/Прыжок не найден/.test(r.error)){
+    const mk=S.marks;S.mode=S.serveKind;S.marks=NOMARK();const r2=analyzeMode(fr,o,ex);
+    if(r2.ok){r=r2;switched=S.mode;setMode(S.mode,false);loadRef()}else{S.mode='attack';S.marks=mk}
+  }
   const fx={};for(const j in S.fixes)if(Object.keys(S.fixes[j]).length)fx[j]=Object.assign({},S.fixes[j]);
   if(r.ok&&S.ball){
     const pxm=r.H/(o.heightCm/100),B=S.ball.pts,rad=S.ball.rad,near=i=>{for(const d of [0,1,-1,2,-2])if(B[i+d])return B[i+d];return null};
@@ -1680,8 +1688,10 @@ function compute(jump){
     if(ex.contactIdx!=null&&r.keys.contact===kin.contact){r.timing.auto=false;r.timing.signals.push('Момент касания взят по мячу (резкая смена его скорости).')}
     if(autoWrist)r.timing.signals.push('Кисть на касании поставлена по положению мяча.');
   }else if(r.ok&&S.ball)r.notes.push('Мяч отслежен, но момент касания по нему найти не удалось (мяч потерян рядом с ударом). Тапни по мячу на другом кадре — ближе к касанию.');
+  if(switched&&r.ok)r.notes.unshift('Был выбран режим «Атака», но прыжка в ролике нет — разобрал как подачу («'+MODE_NAME[switched]+'»). Если это другое упражнение, переключи режим сверху.');
   S.res=r;S.setter=sr;
-  if(!r.ok){$('results').classList.add('hide');setStatus(r.error);return}
+  if(!r.ok){$('results').classList.add('hide');setStatus('⚠ Режим «'+MODE_NAME[S.mode]+'»: '+r.error+' Если в ролике другое упражнение — переключи режим сверху (Атака / Планер / Силовая / Приём).');$('status').style.color='var(--warn)';return}
+  $('status').style.color='';
   $('results').classList.remove('hide');
   view.width=hi.width;view.height=hi.height;
   $('scrub').max=r.n-1;
