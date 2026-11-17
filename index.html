@@ -110,7 +110,7 @@ details.card>summary{font-family:var(--hd);font-weight:600;letter-spacing:.06em;
 .sess img{border-radius:10px}
 body{background:var(--bg)}
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(118deg,transparent 0 57%,rgba(255,122,26,.07) 57% 57.6%,transparent 57.6% 61%,rgba(255,122,26,.045) 61% 66%,transparent 66%),radial-gradient(80% 42% at 92% 12%,rgba(255,122,26,.2),transparent 70%),radial-gradient(70% 40% at 0 100%,rgba(122,167,255,.09),transparent 70%),url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 800' preserveAspectRatio='xMidYMid slice'><defs><pattern id='n' width='14' height='14' patternUnits='userSpaceOnUse'><path d='M14 0H0V14' fill='none' stroke='%23fff' stroke-opacity='.07'/></pattern><linearGradient id='f' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%23fff' stop-opacity='0'/><stop offset='.5' stop-color='%23fff' stop-opacity='1'/><stop offset='1' stop-color='%23fff' stop-opacity='.25'/></linearGradient><mask id='m'><rect width='400' height='800' fill='url(%23f)'/></mask></defs><g mask='url(%23m)'><g fill='none' stroke='%23fff' stroke-opacity='.075' stroke-width='1.6'><path d='M-90 800 118 455h164L490 800'/><path d='M62 548h276M-8 664h416M200 455V800'/></g><rect x='70' y='352' width='260' height='70' fill='url(%23n)'/><g stroke='%23fff' stroke-opacity='.13' stroke-width='2.4' fill='none'><path d='M70 352h260M70 422h260'/><path d='M70 340V470M330 340V470' stroke-width='3.2'/></g></g><g fill='none' stroke='%23ff7a1a' stroke-linecap='round'><path d='M22 372Q150 92 300 150' stroke-opacity='.3' stroke-width='2.4' stroke-dasharray='2 11'/><circle cx='318' cy='158' r='74' stroke-opacity='.3' stroke-width='2.4'/><path d='M256 118q62 6 96 104M272 220q10-76 96-116M300 87q46 30 90 92' stroke-opacity='.2' stroke-width='2'/></g></svg>") center/cover no-repeat}
-.card{background:rgba(20,20,23,.84);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.card{background:rgba(20,20,23,.93)}
 header .sub,#modeHint{text-shadow:0 1px 8px #000}
 input[type=range]{accent-color:var(--acc)}
 .ph{display:grid;grid-template-columns:1fr auto auto;column-gap:8px;align-items:center}
@@ -321,7 +321,7 @@ input[type=range]{accent-color:var(--acc)}
 // Все настраиваемые пороги. src: 'coach' — распространённый тренерский ориентир,
 // 'heur' — эвристика автора, подбирается под себя. ok — зелёная зона [min,max],
 // bad — за этими границами красная зона; между ними жёлтая. null = без границы.
-const APP_VERSION='2.2.0 · 15.11.2026';
+const APP_VERSION='2.2.1 · 17.11.2026';
 const CONFIG = {
   hiSide: 1280,          // размер сохраняемых кадров (для показа и уточнения точек)
   cropPx: 512,           // размер увеличенного фрагмента вокруг игрока для второго прохода
@@ -466,6 +466,7 @@ function analyze(frames,opts){
     for(let i=0;i<n;i++){const q=frames[i].lm&&frames[i].lm[j];if(q){v[i]=q.v==null?1:q.v;if(!q.bad&&(v[i]>=0.3||lows>0.6)){x[i]=q.x;y[i]=q.y}}}
     RX[j]=x;RY[j]=y;V[j]=v;
   }
+  const NA=RX.map(a=>a.map(q=>q==null)); // где точка реально не найдена (до заполнения пропусков)
   // локоть вращается вокруг плеча, кисть — вокруг локтя: пропуск заполняется поворотом, длина сегмента сохраняется
   const polar=(j,p)=>{
     const x=RX[j],y=RY[j],px=RX[p],py=RY[p];let last=-1;
@@ -565,7 +566,23 @@ function analyze(frames,opts){
   let autoContact=null,ms=-1;
   for(const i of flight)if((bow==null||i>bow)&&Y[W][i]<Y[L.nose][i]&&spW[i]>ms){ms=spW[i];autoContact=i}
   if(autoContact==null){autoContact=flight[flight.length-1];for(const i of flight)if(Y[W][i]<Y[W][autoContact])autoContact=i}
+  // второй независимый признак: рука (плечо→кисть) быстро проходит вертикаль вперёд. Он считается по углу руки,
+  // а угол в пропусках достраивается поворотом — поэтому работает и когда кисть смазана на самом ударе.
+  const armTh=i=>Math.atan2(dir*(X[W][i]-X[S][i]),Y[S][i]-Y[W][i])*180/Math.PI; // 0° — рука вверх, плюс — вперёд
+  let cross=null;
+  for(const i of flight){
+    if(i<1||(bow!=null&&i<=bow))continue;
+    const a0=armTh(i-1),a1=armTh(i),dt=t[i]-t[i-1];
+    if(a0<12&&a1>=12&&a1<120&&dt>0&&(a1-a0)/dt>400){cross=Math.abs(a0-12)<Math.abs(a1-12)?i-1:i;break}
+  }
+  const speedContact=autoContact;
+  const naAt=i=>{const ii=rng(t[i]-0.07,t[i]+0.07);return ii.filter(k=>NA[W][k]||NA[E][k]).length/Math.max(1,ii.length)};
+  let contactUnsure=false;
+  if(cross!=null&&Math.abs(t[cross]-t[speedContact])>Math.max(0.07,1.5*dtm)){autoContact=cross;contactUnsure=true}
+  else if(naAt(autoContact)>0.5)contactUnsure=true;
+  else if(cross==null&&spW[autoContact]<2.5*H)contactUnsure=true; // замаха вперёд не видно и кисть медленная — удара в кадре может не быть
   const c=userC?opts.contactIdx:autoContact;
+  if(userC)contactUnsure=false;
   if(bow==null||bow>c)bow=c;
 
   // ---- физика полёта: центр масс (ЦМ) по сегментам тела и парабола свободного падения
@@ -703,7 +720,7 @@ function analyze(frames,opts){
   }
   // ---- Тайминг
   {
-    const cf=userC?'high':'mid';
+    const cf=userC?'high':contactUnsure?'low':'mid';
     add('contactVsApex','Тайминг','Контакт относительно пика',(t[c]-apexT)*1000,'мс',0,cf,'Минус — удар на взлёте (опаздываешь), плюс — на спуске (прыгнул рано)'+(userC?'':'. Контакт определён автоматически — проверь метку'));
     add('heightLost','Тайминг','Потеря высоты к контакту',phys.good?Math.min(100,((t[c]-apexT)/phys.tUp)**2*100):Math.max(0,(hipY[c]-hipY[apex])/rise*100),'%',0,cf,'На сколько таз ниже пика прыжка в момент контакта');
     add('hang','Тайминг','Отрыв → контакт',t[c]-t[to],'с',2,cf,'Время от отрыва до контакта');
@@ -739,8 +756,11 @@ function analyze(frames,opts){
   else if(d<T.contactVsApex.ok[0])
     timing={verdict:'late',title:'Опаздываешь',text:'Контакт за '+(-d)+' мс до пика прыжка: бьёшь на взлёте, не добрав высоту и не закончив замах.'};
   else timing={verdict:'ok',title:'Тайминг в порядке',text:'Контакт в пределах '+Math.abs(d)+' мс от пика прыжка — ты встречаешь мяч в верхней точке.'};
-  timing.auto=!userC;
-  if(mm.setToTakeoff){
+  timing.auto=!userC;timing.unsure=contactUnsure;
+  if(contactUnsure){
+    // момент удара найден ненадёжно — вердикт «рано/поздно» по нему был бы гаданием
+    timing={verdict:'info',auto:true,unsure:true,title:'Момент удара не определён уверенно',text:'Кисть в районе удара плохо видна (смаз или её закрывает мяч), поэтому «рано/поздно» не оцениваю. Долистай до кадра, где ладонь касается мяча, и в строке «Контакт» нажми «Сюда ✎» — или нажми «Мяч» и тапни по мячу в полёте.'};
+  }else if(mm.setToTakeoff){
     const a=mm.setToTakeoff.value,b=mm.idealSet.value,dd=Math.round((b-a)*1000);
     timing.text+=timing.verdict==='ok'?' От паса до отрыва '+a+' с — запомни этот ритм для такого паса.':' От паса до отрыва прошло '+a+' с, а нужно было '+b+' с: отрывайся на '+Math.abs(dd)+' мс '+(dd>0?'позже':'раньше')+'.';
   }
@@ -1686,7 +1706,7 @@ function renderAll(){
   $('timing').innerHTML='<div class="sub">'+(tm.head||'Тайминг')+' · '+MODE_NAME[r.mode]+'</div><b class="big">'+esc(tm.title)+'</b><div>'+esc(tm.text)+'</div>'+
     tm.signals.map(s=>'<div class="sub">• '+esc(s)+'</div>').join('')+
     r.notes.map(x=>'<div class="sub" style="color:var(--warn);margin-top:6px">⚠ '+esc(x)+'</div>').join('')+
-    (tm.auto?'<div class="sub" style="color:var(--warn);margin-top:6px">Контакт определён автоматически. Проверь кадр: дойди до касания мяча и в строке «Контакт» нажми «Сюда ✎» — тогда оценка тайминга будет точной.</div>':'');
+    (tm.auto&&!tm.unsure?'<div class="sub" style="color:var(--warn);margin-top:6px">Контакт определён автоматически. Проверь кадр: дойди до касания мяча и в строке «Контакт» нажми «Сюда ✎» — тогда оценка тайминга будет точной.</div>':'');
   $('recs').innerHTML=r.recs.length?r.recs.map((x,i)=>'<div class="card rec s'+Math.round(x.sev)+'"><b>'+(i+1)+'. '+esc(x.title)+'</b><div class="sub">'+esc(x.why)+'</div>'+(x.at!=null?'<button class="sm" data-go="'+x.at+'" style="margin-top:6px">Показать кадр '+(x.at+1)+'</button>':'')+'<div class="hack">💡 '+esc(x.hack)+'</div><div class="sub">Упражнения:</div><ul>'+x.drills.map(d=>'<li>'+esc(d)+'</li>').join('')+'</ul></div>').join('')
     :'<div class="card">Явных ошибок не найдено. Работай над высотой прыжка и скоростью кисти — следи за ними в «Истории».</div>';
   $('goodCard').innerHTML='<b class="good">Что уже хорошо</b><div class="sub">'+(r.good.length?esc(r.good.join(' · ')):'пока нечего отметить — начни с первой правки')+'</div>';
